@@ -6,6 +6,7 @@ import screenTimeReducer from './slices/screenTimeSlice';
 import sosReducer from './slices/sosSlice';
 import authReducer from './slices/authSlice';
 import appReducer from './slices/appSlice';
+import homeworkModeReducer from './slices/homeworkModeSlice';
 import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
 
 export const store = configureStore({
@@ -14,6 +15,7 @@ export const store = configureStore({
     sos: sosReducer,
     auth: authReducer,
     app: appReducer,
+    homeworkMode: homeworkModeReducer,
   },
 });
 

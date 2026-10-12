@@ -113,12 +113,89 @@ export interface LocationData {
   timestamp: number;
 }
 
+// Homework Mode Types
+export interface HomeworkSchedule {
+  id: string;
+  childId: string;
+  name: string;
+  startTime: string; // HH:mm format
+  endTime: string; // HH:mm format
+  daysOfWeek: number[]; // 0-6, where 0 = Sunday
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BlockedApp {
+  id: string;
+  packageName: string;
+  displayName: string;
+  category: 'social' | 'entertainment' | 'other';
+  icon?: string; // base64 or URI
+}
+
+export interface HomeworkSession {
+  id: string;
+  childId: string;
+  scheduleId: string;
+  startTime: number; // Unix timestamp
+  endTime: number; // Unix timestamp
+  status: 'active' | 'completed' | 'cancelled';
+  blockedAppAttempts: BlockedAppAttempt[];
+  breaksTaken: BreakTime[];
+  parentOverrides: ParentOverride[];
+}
+
+export interface BlockedAppAttempt {
+  id: string;
+  sessionId: string;
+  appId: string;
+  appName: string;
+  timestamp: number;
+  parentNotified: boolean;
+  parentResponse?: 'approved' | 'denied';
+  responseTime?: number; // milliseconds from attempt
+}
+
+export interface BreakTime {
+  id: string;
+  sessionId: string;
+  startTime: number;
+  endTime: number;
+  duration: number; // in milliseconds
+  requestedByChild: boolean;
+}
+
+export interface ParentOverride {
+  id: string;
+  sessionId: string;
+  timestamp: number;
+  type: 'extend_session' | 'allow_app' | 'end_early' | 'disable_homework';
+  reason?: string;
+  createdBy: string; // parent ID
+}
+
+export interface HomeworkModeState {
+  isActive: boolean;
+  currentSession: HomeworkSession | null;
+  schedules: HomeworkSchedule[];
+  blockedApps: BlockedApp[];
+  recentAttempts: BlockedAppAttempt[];
+  breakTimeAvailable: boolean;
+  nextScheduleStart?: number; // Unix timestamp
+  nextScheduleEnd?: number;
+  loading: boolean;
+  error: string | null;
+  lastSync: number;
+}
+
 // Redux State Shape
 export interface RootState {
   screenTime: ScreenTimeState;
   sos: SOSState;
   auth: AuthState;
   app: AppState;
+  homeworkMode: HomeworkModeState;
 }
 
 export interface ScreenTimeState {
