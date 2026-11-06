@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useAppDispatch, useAppSelector } from '../store';
-import { setHistory, setLoading, setError } from '../store/slices/sosSlice';
+import { setLoading, setError } from '../store/slices/sosSlice';
 import { sosAlertService } from '../services/SOSAlertService';
 import { formatDate } from '../utils/helpers';
 
@@ -31,7 +31,7 @@ interface SOSHistoryItem {
 
 const SOSHistoryScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { history, loading, error } = useAppSelector((state) => state.sos);
+  const { loading, error } = useAppSelector((state) => state.sos);
   const [refreshing, setRefreshing] = useState(false);
   const [sosAlerts, setSOSAlerts] = useState<SOSHistoryItem[]>([]);
 

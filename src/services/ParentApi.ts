@@ -228,7 +228,9 @@ export const parentApi = {
     });
   },
 
-  async sendSosAlert(location?: LocationData): Promise<void> {
+  async sendSosAlert(
+    location?: Pick<LocationData, 'latitude' | 'longitude' | 'accuracy'>,
+  ): Promise<void> {
     await request('/api/devices/alerts', {
       method: 'POST',
       authenticated: true,

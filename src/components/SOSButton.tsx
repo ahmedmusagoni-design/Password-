@@ -3,11 +3,10 @@
  * Large red button for emergency SOS alerts
  */
 import React, { useState, useRef } from 'react';
-import { View, StyleSheet, Text, Animated, PanResponder, Alert } from 'react-native';
+import { View, StyleSheet, Text, Animated, Alert } from 'react-native';
 import { useAppDispatch } from '../store';
 import { activateSOS } from '../store/slices/sosSlice';
 import { sosAlertService } from '../services/SOSAlertService';
-import { generateId } from '../utils/helpers';
 import { logger } from '../utils/logger';
 
 interface SOSButtonProps {
@@ -84,17 +83,17 @@ const SOSButton: React.FC<SOSButtonProps> = ({ onPress, enabled = true }) => {
       handlePressOut();
       logger.info('SOS triggered');
 
-      // Show confirmation
-      Alert.alert(
-        'SOS Alert Sent',
-        'Emergency alert has been sent to your parents with your location.',
-        [{ text: 'OK' }]
-      );
-
-      // Send SOS alert
       try {
         const sosAlert = await sosAlertService.triggerSOS('Manual SOS trigger');
         dispatch(activateSOS(sosAlert));
+        if (sosAlert.status === 'sent') {
+          Alert.alert(
+            'SOS Alert Sent',
+            'Your linked parent was notified. Location was included only if you granted permission.',
+          );
+        } else {
+          Alert.alert('SOS not sent', 'The alert could not reach your linked parent. Please try again.');
+        }
       } catch (error) {
         logger.error('Failed to send SOS alert', error);
         Alert.alert('Error', 'Failed to send SOS alert. Please try again.');

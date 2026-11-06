@@ -2,7 +2,7 @@
  * Settings Screen
  * App settings and configuration
  */
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,

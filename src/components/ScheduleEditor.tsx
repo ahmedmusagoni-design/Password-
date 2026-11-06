@@ -13,6 +13,7 @@ import {
   ScrollView,
   Switch,
   Alert,
+  TextInput,
 } from 'react-native';
 import { HomeworkSchedule } from '@/types';
 
@@ -234,7 +235,13 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
             {/* Schedule Name */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Schedule Name</Text>
-              <Text style={styles.input}>{name}</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                maxLength={80}
+                accessibilityLabel="Schedule name"
+              />
             </View>
 
             {/* Start Time */}

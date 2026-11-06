@@ -14,8 +14,6 @@ const SOS_QUEUE_KEY = 'sos_alert_queue';
 const MAX_RETRIES = 3;
 
 export class SOSAlertService {
-  private isInitialized = false;
-
   /**
    * Initialize SOS service
    */
@@ -23,7 +21,6 @@ export class SOSAlertService {
     try {
       logger.info('Initializing SOSAlertService');
       
-      this.isInitialized = true;
       logger.info('SOSAlertService initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize SOSAlertService', error);
@@ -86,7 +83,6 @@ export class SOSAlertService {
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 5000,
       });
 
       return {
@@ -143,6 +139,7 @@ export class SOSAlertService {
           (_, error) => {
             logger.error('Failed to save SOS alert', error);
             reject(error);
+            return false;
           }
         );
       });
@@ -171,6 +168,7 @@ export class SOSAlertService {
           (_, error) => {
             logger.error('Failed to update SOS alert', error);
             reject(error);
+            return false;
           }
         );
       });
@@ -263,6 +261,7 @@ export class SOSAlertService {
           (_, error) => {
             logger.error('Failed to get failed alerts', error);
             reject(error);
+            return false;
           }
         );
       });
@@ -291,10 +290,10 @@ export class SOSAlertService {
                   timestamp: row.timestamp,
                   location: row.latitude
                     ? {
-                        latitude: row.latitude,
-                        longitude: row.longitude,
-                        accuracy: row.accuracy,
-                      }
+                          latitude: row.latitude,
+                          longitude: row.longitude,
+                          accuracy: row.accuracy,
+                        }
                     : undefined,
                   reason: row.reason,
                   status: row.status,
@@ -307,6 +306,7 @@ export class SOSAlertService {
             (_, error) => {
               logger.error('Failed to get SOS alert by ID', error);
               reject(error);
+              return false;
             }
           );
         });
@@ -334,10 +334,10 @@ export class SOSAlertService {
                 childName: row.child_name,
                 timestamp: row.timestamp,
                 location: row.latitude
-                  ? {
-                      latitude: row.latitude,
-                      longitude: row.longitude,
-                      accuracy: row.accuracy,
+                    ? {
+                        latitude: row.latitude,
+                        longitude: row.longitude,
+                        accuracy: row.accuracy,
                     }
                   : undefined,
                 reason: row.reason,
@@ -350,6 +350,7 @@ export class SOSAlertService {
             (_, error) => {
               logger.error('Failed to get all SOS alerts', error);
               reject(error);
+              return false;
             }
           );
         });
@@ -381,6 +382,7 @@ export class SOSAlertService {
           (_, error) => {
             logger.error('Failed to add to SOS history', error);
             reject(error);
+            return false;
           }
         );
       });
@@ -396,8 +398,14 @@ export class SOSAlertService {
       return new Promise((resolve, reject) => {
         db.transaction((tx) => {
           tx.executeSql('DELETE FROM sos_alerts;', []);
-          tx.executeSql('DELETE FROM sos_history;', [], () => resolve(), (_, error) =>
-            reject(error)
+          tx.executeSql(
+            'DELETE FROM sos_history;',
+            [],
+            () => resolve(),
+            (_, error) => {
+              reject(error);
+              return false;
+            },
           );
         });
       });

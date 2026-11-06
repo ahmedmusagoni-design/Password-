@@ -16,7 +16,7 @@ import {
 export class HomeworkModeService {
   private schedules: Map<string, HomeworkSchedule> = new Map();
   private activeSessions: Map<string, HomeworkSession> = new Map();
-  private sessionTimers: Map<string, NodeJS.Timer> = new Map();
+  private sessionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private blockedApps: Map<string, BlockedApp> = new Map();
   private attemptLog: BlockedAppAttempt[] = [];
 
@@ -106,6 +106,7 @@ export class HomeworkModeService {
     const now = Date.now();
     const newSchedule: HomeworkSchedule = {
       ...schedule,
+      childId,
       id: `schedule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       createdAt: now,
       updatedAt: now,
@@ -139,7 +140,7 @@ export class HomeworkModeService {
       ...updates,
       id: schedule.id,
       createdAt: schedule.createdAt,
-      updatedAt: Date.now(),
+      updatedAt: Math.max(Date.now(), schedule.updatedAt + 1),
     };
 
     this.schedules.set(scheduleId, updated);
@@ -162,14 +163,12 @@ export class HomeworkModeService {
       throw new Error(`Schedule ${scheduleId} not found or disabled`);
     }
 
-    const now = Date.now();
-    const [startHour, startMin] = schedule.startTime.split(':').map(Number);
     const [endHour, endMin] = schedule.endTime.split(':').map(Number);
 
-    const startDate = new Date();
-    startDate.setHours(startHour, startMin, 0, 0);
+    const now = Date.now();
+    const startDate = new Date(now);
 
-    const endDate = new Date();
+    const endDate = new Date(now);
     endDate.setHours(endHour, endMin, 0, 0);
     if (endDate <= startDate) {
       endDate.setDate(endDate.getDate() + 1);
@@ -377,8 +376,8 @@ export class HomeworkModeService {
    */
   public allowAppTemporarily(
     childId: string,
-    appPackageName: string,
-    durationMs: number,
+    _appPackageName: string,
+    _durationMs: number,
     parentId: string,
     reason?: string,
   ): ParentOverride | null {
@@ -395,11 +394,6 @@ export class HomeworkModeService {
     };
 
     session.parentOverrides.push(override);
-
-    // Auto-revoke after duration
-    setTimeout(() => {
-      // In real implementation, this would trigger blocking again
-    }, durationMs);
 
     return override;
   }

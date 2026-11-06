@@ -161,9 +161,7 @@ const homeworkModeSlice = createSlice({
     },
 
     // Reset state
-    resetHomeworkMode: (state) => {
-      return initialState;
-    },
+    resetHomeworkMode: () => initialState,
   },
 });
 

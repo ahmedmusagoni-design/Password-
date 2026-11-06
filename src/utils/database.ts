@@ -22,7 +22,10 @@ export const initializeDatabase = async (): Promise<void> => {
         );`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       // Daily Stats Cache Table
@@ -35,7 +38,10 @@ export const initializeDatabase = async (): Promise<void> => {
         );`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       // SOS Alerts Table
@@ -55,7 +61,10 @@ export const initializeDatabase = async (): Promise<void> => {
         );`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       // SOS History Table
@@ -71,7 +80,10 @@ export const initializeDatabase = async (): Promise<void> => {
         );`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       // Sync Queue Table
@@ -85,7 +97,10 @@ export const initializeDatabase = async (): Promise<void> => {
         );`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       // Indexes for performance
@@ -93,21 +108,30 @@ export const initializeDatabase = async (): Promise<void> => {
         `CREATE INDEX IF NOT EXISTS idx_app_usage_date ON app_usage(date_str);`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       tx.executeSql(
         `CREATE INDEX IF NOT EXISTS idx_app_usage_timestamp ON app_usage(timestamp);`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
 
       tx.executeSql(
         `CREATE INDEX IF NOT EXISTS idx_sos_timestamp ON sos_alerts(timestamp);`,
         [],
         () => {},
-        (_, error) => reject(error)
+        (_, error) => {
+          reject(error);
+          return false;
+        }
       );
     }, reject, resolve);
   });
@@ -116,11 +140,15 @@ export const initializeDatabase = async (): Promise<void> => {
 export const clearDatabase = async (): Promise<void> => {
   return new Promise((resolve, reject) => {
     db.transaction((tx) => {
-      tx.executeSql('DELETE FROM app_usage;', [], () => {}, (_, error) => reject(error));
-      tx.executeSql('DELETE FROM daily_stats;', [], () => {}, (_, error) => reject(error));
-      tx.executeSql('DELETE FROM sos_alerts;', [], () => {}, (_, error) => reject(error));
-      tx.executeSql('DELETE FROM sos_history;', [], () => {}, (_, error) => reject(error));
-      tx.executeSql('DELETE FROM sync_queue;', [], () => {}, (_, error) => reject(error));
+      const onStatementError = (_transaction: SQLite.SQLTransaction, error: SQLite.SQLError) => {
+        reject(error);
+        return false;
+      };
+      tx.executeSql('DELETE FROM app_usage;', [], () => {}, onStatementError);
+      tx.executeSql('DELETE FROM daily_stats;', [], () => {}, onStatementError);
+      tx.executeSql('DELETE FROM sos_alerts;', [], () => {}, onStatementError);
+      tx.executeSql('DELETE FROM sos_history;', [], () => {}, onStatementError);
+      tx.executeSql('DELETE FROM sync_queue;', [], () => {}, onStatementError);
     }, reject, resolve);
   });
 };

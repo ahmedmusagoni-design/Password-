@@ -3,20 +3,26 @@
  * Comprehensive test suite for the Homework Mode feature
  */
 
-import { homeworkModeService } from '@/services/HomeworkModeService';
+import { HomeworkModeService } from '@/services/HomeworkModeService';
 import {
   HomeworkSchedule,
   HomeworkSession,
-  BlockedAppAttempt,
 } from '@/types';
 
 // Test suite for HomeworkModeService
 describe('HomeworkModeService', () => {
+  let homeworkModeService: HomeworkModeService;
   
   // Setup and teardown
   beforeEach(() => {
     // Clear any existing data
     jest.clearAllMocks();
+    homeworkModeService = new HomeworkModeService();
+  });
+
+  afterEach(() => {
+    const session = homeworkModeService.getActiveSession('child_1');
+    if (session) homeworkModeService.endSession(session.id);
   });
 
   // ============ Schedule Management Tests ============
@@ -158,7 +164,7 @@ describe('HomeworkModeService', () => {
     });
 
     it('should check if child is in homework mode', () => {
-      const session = homeworkModeService.startSession('child_1', schedule.id);
+      homeworkModeService.startSession('child_1', schedule.id);
 
       expect(homeworkModeService.isChildInHomeworkMode('child_1')).toBe(true);
       expect(homeworkModeService.isChildInHomeworkMode('child_2')).toBe(false);
@@ -169,7 +175,7 @@ describe('HomeworkModeService', () => {
       const remaining = homeworkModeService.getTimeRemaining('child_1');
 
       expect(remaining).toBeGreaterThan(0);
-      expect(remaining).toBeLessThanOrEqual(session.endTime - Date.now());
+      expect(remaining).toBeLessThanOrEqual(session.endTime - session.startTime);
     });
   });
 
@@ -430,7 +436,7 @@ describe('HomeworkModeService', () => {
 
   describe('Schedule Checking', () => {
     it('should get next scheduled time', () => {
-      const schedule = homeworkModeService.createSchedule('child_1', {
+      homeworkModeService.createSchedule('child_1', {
         name: 'Tomorrow Schedule',
         startTime: '14:00',
         endTime: '18:00',
@@ -447,7 +453,7 @@ describe('HomeworkModeService', () => {
     });
 
     it('should return null if no enabled schedules', () => {
-      const schedule = homeworkModeService.createSchedule('child_1', {
+      homeworkModeService.createSchedule('child_1', {
         name: 'Disabled Schedule',
         startTime: '14:00',
         endTime: '18:00',
@@ -505,7 +511,7 @@ describe('HomeworkModeService', () => {
         childId: 'child_1',
       });
 
-      const session = homeworkModeService.startSession('child_1', schedule.id);
+      homeworkModeService.startSession('child_1', schedule.id);
 
       homeworkModeService.handleAppLaunchAttempt(
         'child_1',
