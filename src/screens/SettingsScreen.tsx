@@ -8,7 +8,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Switch,
   TouchableOpacity,
   Alert,
 } from 'react-native';
@@ -17,13 +16,10 @@ import { clearUser } from '../store/slices/authSlice';
 import { screenTimeTrackerService } from '../services/ScreenTimeTrackerService';
 import { sosAlertService } from '../services/SOSAlertService';
 import { clearDatabase } from '../utils/database';
+import { parentApi } from '../services/ParentApi';
 
 const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [locationEnabled, setLocationEnabled] = useState(true);
-  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(true);
-
   /**
    * Handle logout
    */
@@ -37,7 +33,11 @@ const SettingsScreen: React.FC = () => {
       {
         text: 'Logout',
         onPress: () => {
-          dispatch(clearUser());
+          void parentApi.signOut().then(() => {
+            dispatch(clearUser());
+          }).catch((error: unknown) => {
+            Alert.alert('Sign out failed', error instanceof Error ? error.message : 'Please try again.');
+          });
         },
         style: 'destructive',
       },
@@ -50,7 +50,7 @@ const SettingsScreen: React.FC = () => {
   const handleClearData = () => {
     Alert.alert(
       'Clear Data',
-      'This will delete all screen time and SOS history. This action cannot be undone.',
+      'This removes screen-time and SOS history stored on this device only. It does not delete family-server data. This action cannot be undone.',
       [
         {
           text: 'Cancel',
@@ -80,7 +80,7 @@ const SettingsScreen: React.FC = () => {
   const handleResetDatabase = () => {
     Alert.alert(
       'Reset Database',
-      'This will reset the database to initial state. This action cannot be undone.',
+      'This resets the database on this device only. It does not delete family-server data. This action cannot be undone.',
       [
         {
           text: 'Cancel',
@@ -105,55 +105,19 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Notifications Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Text style={styles.settingName}>Push Notifications</Text>
-            <Text style={styles.settingDesc}>Receive alerts about screen time</Text>
-          </View>
-          <Switch
-            value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
-            trackColor={{ false: '#EFEFEF', true: '#4ECDC4' }}
-          />
-        </View>
+        <Text style={styles.sectionTitle}>Family alerts</Text>
+        <Text style={styles.settingDesc}>
+          SOS and screen-time alerts appear in the family dashboard when the device is connected.
+          Push delivery is not configured.
+        </Text>
       </View>
 
-      {/* Location Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Location</Text>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Text style={styles.settingName}>Location Services</Text>
-            <Text style={styles.settingDesc}>Required for SOS alerts</Text>
-          </View>
-          <Switch
-            value={locationEnabled}
-            onValueChange={setLocationEnabled}
-            trackColor={{ false: '#EFEFEF', true: '#4ECDC4' }}
-          />
-        </View>
-      </View>
-
-      {/* Background Service Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Background Service</Text>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Text style={styles.settingName}>Background Tracking</Text>
-            <Text style={styles.settingDesc}>Track app usage in background</Text>
-          </View>
-          <Switch
-            value={backgroundTrackingEnabled}
-            onValueChange={setBackgroundTrackingEnabled}
-            trackColor={{ false: '#EFEFEF', true: '#4ECDC4' }}
-          />
-        </View>
+        <Text style={styles.settingDesc}>
+          Location permission is requested only when a child sends an SOS alert. Sharing coordinates is optional.
+        </Text>
       </View>
 
       {/* App Info Section */}
@@ -172,7 +136,7 @@ const SettingsScreen: React.FC = () => {
 
         <View style={styles.infoItem}>
           <Text style={styles.infoLabel}>Environment</Text>
-          <Text style={styles.infoValue}>Development (Mock Data)</Text>
+          <Text style={styles.infoValue}>{parentApi.isConfigured ? 'API configured' : 'API not configured'}</Text>
         </View>
       </View>
 
@@ -181,11 +145,11 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>Data Management</Text>
 
         <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
-          <Text style={styles.dangerButtonText}>Clear All Data</Text>
+          <Text style={styles.dangerButtonText}>Clear on-device history</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.dangerButton} onPress={handleResetDatabase}>
-          <Text style={styles.dangerButtonText}>Reset Database</Text>
+          <Text style={styles.dangerButtonText}>Reset local database</Text>
         </TouchableOpacity>
       </View>
 
@@ -200,8 +164,8 @@ const SettingsScreen: React.FC = () => {
 
       {/* Footer */}
       <View style={styles.footer}>
-        <Text style={styles.footerText}>© 2024 Parental Control App</Text>
-        <Text style={styles.footerText}>Made with ❤️ for child safety</Text>
+        <Text style={styles.footerText}>Parental Control</Text>
+        <Text style={styles.footerText}>Family data stays limited to summaries and SOS alerts.</Text>
       </View>
     </ScrollView>
   );

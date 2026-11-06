@@ -5,19 +5,20 @@
 import React, { useEffect } from 'react';
 import { Provider } from 'react-redux';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/stack';
-import { store } from './store';
+import { createStackNavigator } from '@react-navigation/stack';
+import { store, useAppSelector } from './store';
 import { initializeDatabase } from './utils/database';
-import { screenTimeTrackerService } from './services/ScreenTimeTrackerService';
 import { sosAlertService } from './services/SOSAlertService';
 import { logger } from './utils/logger';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import AuthScreen from './screens/AuthScreen';
+import { setUser } from './store/slices/authSlice';
+import { parentApi } from './services/ParentApi';
 
-const Stack = createNativeStackNavigator();
+const Stack = createStackNavigator();
 
 const RootNavigator: React.FC = () => {
-  const isAuthenticated = false; // TODO: Get from Redux auth state
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
 
   return (
     <Stack.Navigator
@@ -63,14 +64,14 @@ const App: React.FC = () => {
       await initializeDatabase();
       logger.info('Database initialized');
 
-      // Initialize screen time tracker
-      await screenTimeTrackerService.initialize();
-      await screenTimeTrackerService.startTracking();
-      logger.info('Screen time tracker initialized and started');
-
       // Initialize SOS service
       await sosAlertService.initialize();
       logger.info('SOS service initialized');
+
+      const user = await parentApi.restoreSession();
+      if (user) {
+        store.dispatch(setUser({ userId: user.id, userType: user.role }));
+      }
 
       logger.info('Application initialized successfully');
     } catch (error) {

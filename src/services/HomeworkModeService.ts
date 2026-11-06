@@ -1,7 +1,7 @@
 /**
  * HomeworkModeService
- * Manages homework mode scheduling, app blocking, and session tracking.
- * Integrates with DeviceControlService for app enforcement.
+ * Manages in-memory study plans and timer sessions.
+ * It does not collect usage or enforce app restrictions on the device.
  */
 
 import {

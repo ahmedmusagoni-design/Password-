@@ -1,6 +1,6 @@
 /**
  * HomeworkModeScreen Component
- * Main screen for managing homework mode, viewing schedules, and monitoring sessions
+ * Main screen for local study planning
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,30 +18,17 @@ import { RootState, HomeworkSchedule, HomeworkSession } from '@/types';
 import {
   setActiveSession,
   setBreakTimeAvailable,
-  recordAppAttempt,
   setSchedules,
 } from '@/store/slices/homeworkModeSlice';
 import { homeworkModeService } from '@/services/HomeworkModeService';
-
-interface ScheduleEditorProps {
-  schedule?: HomeworkSchedule;
-  onSave: (schedule: HomeworkSchedule) => void;
-  onCancel: () => void;
-}
+import ScheduleEditor from '@/components/ScheduleEditor';
+import { useAppSelector } from '@/store';
 
 interface StatusDisplayProps {
   session: HomeworkSession | null;
   isActive: boolean;
   onBreakRequest: () => void;
   breakTimeAvailable: boolean;
-}
-
-interface BlockedAppNotificationProps {
-  visible: boolean;
-  appName: string;
-  timeRemaining: number;
-  onRequestAccess: () => void;
-  onDismiss: () => void;
 }
 
 /**
@@ -94,7 +81,7 @@ const StatusDisplay: React.FC<StatusDisplayProps> = ({
 
   return (
     <View style={styles.statusContainer}>
-      <Text style={styles.statusTitle}>Homework Mode: ACTIVE</Text>
+      <Text style={styles.statusTitle}>Study plan underway</Text>
       <Text style={styles.timeRemaining}>{formatTime(timeRemaining)}</Text>
       <Text style={styles.statusSubtext}>Time remaining</Text>
 
@@ -115,82 +102,19 @@ const StatusDisplay: React.FC<StatusDisplayProps> = ({
 };
 
 /**
- * Blocked App Notification Sub-component
- */
-const BlockedAppNotification: React.FC<BlockedAppNotificationProps> = ({
-  visible,
-  appName,
-  timeRemaining,
-  onRequestAccess,
-  onDismiss,
-}) => {
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours} hours and ${minutes} minutes`;
-    }
-    return `${minutes} minutes`;
-  };
-
-  if (!visible) return null;
-
-  return (
-    <View style={styles.notificationContainer}>
-      <Text style={styles.notificationTitle}>App Blocked</Text>
-      <Text style={styles.blockedAppName}>{appName}</Text>
-
-      <View style={styles.notificationContent}>
-        <Text style={styles.notificationMessage}>
-          This app is blocked during homework time to help you stay focused.
-        </Text>
-        <Text style={styles.timeRemainingText}>
-          Homework ends in {formatTime(timeRemaining)}
-        </Text>
-      </View>
-
-      <View style={styles.notificationActions}>
-        <TouchableOpacity
-          style={styles.dismissButton}
-          onPress={onDismiss}
-        >
-          <Text style={styles.buttonText}>Got it</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.requestButton}
-          onPress={onRequestAccess}
-        >
-          <Text style={styles.buttonText}>Request Access</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-/**
  * Main HomeworkModeScreen Component
  */
 const HomeworkModeScreen: React.FC = () => {
   const dispatch = useDispatch();
+  const childId = useAppSelector((state) => state.auth.userId || 'local-child');
   const {
     isActive,
     currentSession,
     schedules,
-    blockedApps,
-    recentAttempts,
     breakTimeAvailable,
   } = useSelector((state: RootState) => state.homeworkMode);
 
   const [showScheduleEditor, setShowScheduleEditor] = useState(false);
-  const [showNotification, setShowNotification] = useState(false);
-  const [blockedAppName, setBlockedAppName] = useState<string>('');
-  const [nextSchedule, setNextSchedule] = useState<{
-    startTime: number;
-    endTime: number;
-  } | null>(null);
 
   // Initialize service callbacks
   useEffect(() => {
@@ -199,37 +123,21 @@ const HomeworkModeScreen: React.FC = () => {
         dispatch(setActiveSession(session));
         dispatch(setBreakTimeAvailable(true));
       },
-      onSessionEnd: (session) => {
+      onSessionEnd: () => {
         dispatch(setActiveSession(null));
       },
-      onAppBlocked: (attempt) => {
-        setBlockedAppName(attempt.appName);
-        setShowNotification(true);
-      },
-      onParentNotificationNeeded: (attempt) => {
-        // In real app, this would send push notification to parent
-        console.log('Parent notification needed for app attempt:', attempt);
-      },
-      onBreakTimeRequested: (session) => {
+      onBreakTimeRequested: () => {
         dispatch(setBreakTimeAvailable(false));
       },
     });
   }, [dispatch]);
 
-  // Initialize blocked apps
-  useEffect(() => {
-    const apps = homeworkModeService.getBlockedApps();
-    if (apps.length > 0) {
-      dispatch(setSchedules(schedules));
-    }
-  }, []);
-
   const handleCreateSchedule = () => {
     setShowScheduleEditor(true);
   };
 
-  const handleSaveSchedule = (schedule: HomeworkSchedule) => {
-    const created = homeworkModeService.createSchedule(schedule.childId, schedule);
+  const handleSaveSchedule = (schedule: Omit<HomeworkSchedule, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const created = homeworkModeService.createSchedule(childId, schedule);
     dispatch(setSchedules([...schedules, created]));
     setShowScheduleEditor(false);
   };
@@ -238,30 +146,20 @@ const HomeworkModeScreen: React.FC = () => {
     if (!currentSession) return;
 
     try {
-      homeworkModeService.requestBreakTime(currentSession.childId, 5 * 60 * 1000);
-      Alert.alert('Success', 'Break time approved! Take 5 minutes to rest.');
+      const breakTime = homeworkModeService.requestBreakTime(
+        currentSession.childId,
+        5 * 60 * 1000,
+      );
+      if (!breakTime) {
+        throw new Error('The study session is no longer active.');
+      }
+      Alert.alert('Break started', 'Your five-minute study break has started on this device.');
     } catch (error) {
-      Alert.alert('Error', 'Could not request break time');
+      Alert.alert(
+        'Could not start break',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
     }
-  };
-
-  const handleRequestAccess = () => {
-    Alert.alert(
-      'Request Sent',
-      'Your parent has been notified of your request. They will respond shortly.',
-    );
-    setShowNotification(false);
-  };
-
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
   };
 
   const renderScheduleItem = (schedule: HomeworkSchedule) => (
@@ -284,23 +182,12 @@ const HomeworkModeScreen: React.FC = () => {
     </View>
   );
 
-  const renderAttemptItem = (attempt: any) => (
-    <View key={attempt.id} style={styles.attemptItem}>
-      <Text style={styles.attemptApp}>{attempt.appName}</Text>
-      <Text style={styles.attemptTime}>
-        {new Date(attempt.timestamp).toLocaleTimeString()}
-      </Text>
-      <Text style={[
-        styles.attemptStatus,
-        { color: attempt.parentResponse === 'approved' ? '#4CAF50' : '#F44336' },
-      ]}>
-        {attempt.parentResponse === 'approved' ? 'Allowed' : 'Blocked'}
-      </Text>
-    </View>
-  );
-
   return (
     <ScrollView style={styles.container}>
+      <Text style={styles.disclaimer}>
+        Study schedules and timers are local planning tools. This app cannot see which apps are open or block them.
+      </Text>
+
       {/* Status Display */}
       <StatusDisplay
         session={currentSession}
@@ -312,7 +199,7 @@ const HomeworkModeScreen: React.FC = () => {
       {/* Schedules Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Homework Schedules</Text>
+          <Text style={styles.sectionTitle}>Study schedules</Text>
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleCreateSchedule}
@@ -333,41 +220,18 @@ const HomeworkModeScreen: React.FC = () => {
         )}
       </View>
 
-      {/* Blocked Apps Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Blocked Apps During Homework</Text>
-        <View style={styles.appsGrid}>
-          {blockedApps.map((app) => (
-            <View key={app.id} style={styles.appCard}>
-              <Text style={styles.appName}>{app.displayName}</Text>
-              <Text style={styles.appCategory}>{app.category}</Text>
-            </View>
-          ))}
-        </View>
+        <Text style={styles.sectionTitle}>What this plan does</Text>
+        <Text style={styles.emptyText}>
+          It can show a schedule and run a study timer on this device. App blocking, app-use monitoring, and parent push alerts require separate native platform support and are not active here.
+        </Text>
       </View>
 
-      {/* Recent Attempts Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Access Attempts</Text>
-        {recentAttempts.length === 0 ? (
-          <Text style={styles.emptyText}>No attempts recorded</Text>
-        ) : (
-          <FlatList
-            scrollEnabled={false}
-            data={recentAttempts}
-            renderItem={({ item }) => renderAttemptItem(item)}
-            keyExtractor={(item) => item.id}
-          />
-        )}
-      </View>
-
-      {/* Blocked App Notification */}
-      <BlockedAppNotification
-        visible={showNotification}
-        appName={blockedAppName}
-        timeRemaining={currentSession?.endTime ? currentSession.endTime - Date.now() : 0}
-        onRequestAccess={handleRequestAccess}
-        onDismiss={() => setShowNotification(false)}
+      <ScheduleEditor
+        visible={showScheduleEditor}
+        childId={childId}
+        onSave={handleSaveSchedule}
+        onCancel={() => setShowScheduleEditor(false)}
       />
     </ScrollView>
   );
@@ -377,6 +241,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  disclaimer: {
+    color: '#46585B',
+    fontSize: 13,
+    lineHeight: 19,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
 
   // Status Display

@@ -10,17 +10,23 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
+  TouchableOpacity,
 } from 'react-native';
 import { useAppDispatch, useAppSelector } from '../store';
 import { setDailyStats, setLoading, setError } from '../store/slices/screenTimeSlice';
-import { generateMockDailyStats } from '../utils/mockData';
 import { formatDuration, formatDate } from '../utils/helpers';
 import { screenTimeTrackerService } from '../services/ScreenTimeTrackerService';
+import { parentApi } from '../services/ParentApi';
 
 const ScreenTimeOverviewScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const { dailyStats, loading, error } = useAppSelector((state) => state.screenTime);
   const [refreshing, setRefreshing] = useState(false);
+  const [selfReportedMinutes, setSelfReportedMinutes] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
     loadDailyStats();
@@ -33,13 +39,14 @@ const ScreenTimeOverviewScreen: React.FC = () => {
     try {
       dispatch(setLoading(true));
       
-      // Try to get real data from tracker
       const apps = await screenTimeTrackerService.getTodayUsage();
-      
-      // For demo purposes, generate mock data
-      const mockData = generateMockDailyStats(new Date());
-      
-      dispatch(setDailyStats(mockData));
+      const dailyStats = {
+        date: formatDate(new Date()),
+        totalDuration: apps.reduce((total, app) => total + app.duration, 0),
+        apps,
+        alerts: [],
+      };
+      dispatch(setDailyStats(dailyStats));
       dispatch(setError(null));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load screen time data';
@@ -57,6 +64,29 @@ const ScreenTimeOverviewScreen: React.FC = () => {
     setRefreshing(true);
     await loadDailyStats();
     setRefreshing(false);
+  };
+
+  const handleShareSummary = async () => {
+    if (!/^\d{1,4}$/.test(selfReportedMinutes) || Number(selfReportedMinutes) > 1440) {
+      setShareError('Enter a total number of minutes from 0 to 1440.');
+      return;
+    }
+
+    setSharing(true);
+    setShareError(null);
+    setShared(false);
+    try {
+      await parentApi.submitSelfReportedUsage(
+        new Date().toISOString().slice(0, 10),
+        Number(selfReportedMinutes),
+      );
+      setSelfReportedMinutes('');
+      setShared(true);
+    } catch (requestError) {
+      setShareError(requestError instanceof Error ? requestError.message : 'Could not share the summary.');
+    } finally {
+      setSharing(false);
+    }
   };
 
   if (loading && !dailyStats) {
@@ -98,7 +128,7 @@ const ScreenTimeOverviewScreen: React.FC = () => {
         <View style={styles.totalTimeContainer}>
           <Text style={styles.totalTimeLabel}>Total Screen Time</Text>
           <Text style={styles.totalTime}>
-            {hours}h {minutes}m
+            {dailyStats.apps.length === 0 ? 'Not measured' : `${hours}h ${minutes}m`}
           </Text>
         </View>
       </View>
@@ -136,8 +166,12 @@ const ScreenTimeOverviewScreen: React.FC = () => {
 
       {/* Top Apps Section */}
       <View style={styles.topAppsSection}>
-        <Text style={styles.sectionTitle}>Top Apps Today</Text>
-        {dailyStats.apps.slice(0, 5).map((app, index) => (
+        <Text style={styles.sectionTitle}>On-device usage</Text>
+        {dailyStats.apps.length === 0 ? (
+          <Text style={styles.emptySummary}>
+            This Expo build cannot read usage from other apps. Any number shared below is entered by you, not measured.
+          </Text>
+        ) : dailyStats.apps.slice(0, 5).map((app, index) => (
           <View key={index} style={styles.appRow}>
             <View style={styles.appInfo}>
               <Text style={styles.appName}>{app.appName}</Text>
@@ -155,6 +189,34 @@ const ScreenTimeOverviewScreen: React.FC = () => {
             </View>
           </View>
         ))}
+      </View>
+
+      <View style={styles.selfReportSection}>
+        <Text style={styles.sectionTitle}>Share a daily total</Text>
+        <Text style={styles.emptySummary}>
+          Enter your own estimate to share with your parent. This app does not collect app activity.
+        </Text>
+        <View style={styles.reportForm}>
+          <TextInput
+            accessibilityLabel="Self-reported screen time in minutes"
+            keyboardType="number-pad"
+            maxLength={4}
+            onChangeText={setSelfReportedMinutes}
+            placeholder="Minutes today"
+            style={styles.reportInput}
+            value={selfReportedMinutes}
+          />
+          <TouchableOpacity
+            accessibilityRole="button"
+            disabled={sharing}
+            onPress={handleShareSummary}
+            style={[styles.reportButton, sharing && styles.reportButtonDisabled]}
+          >
+            <Text style={styles.reportButtonText}>{sharing ? 'Sharing…' : 'Share'}</Text>
+          </TouchableOpacity>
+        </View>
+        {shared && <Text style={styles.shareConfirmation}>Daily total shared with your family.</Text>}
+        {shareError && <Text accessibilityRole="alert" style={styles.errorText}>{shareError}</Text>}
       </View>
 
       {/* Summary Section */}
@@ -324,6 +386,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
   },
+  emptySummary: {
+    color: '#536669',
+    fontSize: 13,
+    lineHeight: 19,
+    paddingVertical: 8,
+  },
+  selfReportSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    padding: 16,
+  },
+  reportForm: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  reportInput: {
+    borderColor: '#C9D3D3',
+    borderRadius: 6,
+    borderWidth: 1,
+    color: '#203033',
+    flex: 1,
+    fontSize: 16,
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  reportButton: {
+    alignItems: 'center',
+    backgroundColor: '#167E78',
+    borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 18,
+  },
+  reportButtonDisabled: { opacity: 0.6 },
+  reportButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  shareConfirmation: { color: '#176A65', fontSize: 13, marginTop: 10 },
 });
 
 export default ScreenTimeOverviewScreen;

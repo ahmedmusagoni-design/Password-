@@ -4,10 +4,11 @@
  */
 import { logger } from '../utils/logger';
 import { SOSAlert, SOSHistoryEntry, LocationData } from '../types';
-import { generateId, retryWithBackoff } from '../utils/helpers';
+import { generateId } from '../utils/helpers';
 import { db } from '../utils/database';
 import * as Location from 'expo-location';
-import AsyncStorage from '@react-native-community/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { parentApi } from './ParentApi';
 
 const SOS_QUEUE_KEY = 'sos_alert_queue';
 const MAX_RETRIES = 3;
@@ -22,12 +23,6 @@ export class SOSAlertService {
     try {
       logger.info('Initializing SOSAlertService');
       
-      // Request location permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        logger.warn('Location permission not granted for SOS service');
-      }
-
       this.isInitialized = true;
       logger.info('SOSAlertService initialized successfully');
     } catch (error) {
@@ -41,7 +36,7 @@ export class SOSAlertService {
    */
   public async triggerSOS(reason: string, childId: string = 'child-001'): Promise<SOSAlert> {
     try {
-      logger.info(`Triggering SOS for reason: ${reason}`);
+      logger.info('Triggering SOS alert');
 
       // Get current location
       const location = await this.getCurrentLocation();
@@ -86,6 +81,9 @@ export class SOSAlertService {
    */
   private async getCurrentLocation(): Promise<LocationData | undefined> {
     try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') return undefined;
+
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
         timeout: 5000,
@@ -110,33 +108,9 @@ export class SOSAlertService {
    * Send alert to parents
    */
   private async sendAlertToParents(sosAlert: SOSAlert): Promise<void> {
-    try {
-      // TODO: Implement actual notification service
-      // This would integrate with Firebase Cloud Messaging or similar
-      logger.info('Sending SOS alert to parents', sosAlert);
-
-      // Mock implementation
-      const mockDelivered = await retryWithBackoff(
-        async () => {
-          // Simulate network call
-          return new Promise<boolean>((resolve) => {
-            setTimeout(() => resolve(true), 1000);
-          });
-        },
-        MAX_RETRIES,
-        1000
-      );
-
-      if (!mockDelivered) {
-        throw new Error('Failed to send alert after retries');
-      }
-
-      sosAlert.status = 'sent';
-      logger.info('SOS alert sent successfully');
-    } catch (error) {
-      logger.error('Error sending alert to parents', error);
-      throw error;
-    }
+    await parentApi.sendSosAlert(sosAlert.location);
+    sosAlert.status = 'sent';
+    logger.info('SOS alert submitted to the family API');
   }
 
   /**

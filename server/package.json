@@ -1,0 +1,13 @@
+{
+  "name": "parental-control-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependency-free Node.js API for family accounts and consented device summaries",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

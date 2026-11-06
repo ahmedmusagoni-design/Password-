@@ -1,246 +1,220 @@
-/**
- * Auth Screen
- * Login/authentication screen for the app
- */
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useAppDispatch } from '../store';
 import { setUser } from '../store/slices/authSlice';
-import { generateId } from '../utils/helpers';
+import { parentApi } from '../services/ParentApi';
+
+type AccountRole = 'parent' | 'child';
 
 const AuthScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const [userType, setUserType] = useState<'parent' | 'child'>('child');
+  const [role, setRole] = useState<AccountRole>('parent');
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [parentName, setParentName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [childName, setChildName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Handle login
-   */
-  const handleLogin = (type: 'parent' | 'child') => {
-    const userId = generateId();
-    dispatch(
-      setUser({
-        userId,
-        userType: type,
-      })
-    );
+  const authenticate = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const user = role === 'child'
+        ? await parentApi.linkChild(childName, inviteCode)
+        : creatingAccount
+          ? await parentApi.registerParent(parentName, email, password)
+          : await parentApi.signIn(email, password);
+      dispatch(setUser({ userId: user.id, userType: user.role }));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.logo}>🛡️</Text>
-          <Text style={styles.title}>Parental Control</Text>
-          <Text style={styles.subtitle}>Child Safety & Screen Time Monitoring</Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text nativeID="auth-title" style={styles.title} testID="auth-title">Parental Control</Text>
+        <Text style={styles.description}>
+          A family dashboard for shared daily summaries and child-initiated SOS alerts.
+        </Text>
+
+        <View style={styles.roleSwitch} accessibilityRole="tablist">
+          {(['parent', 'child'] as const).map((nextRole) => (
+            <Pressable
+              key={nextRole}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: role === nextRole }}
+              onPress={() => {
+                setRole(nextRole);
+                setError(null);
+              }}
+              style={[styles.roleOption, role === nextRole && styles.selectedRole]}
+            >
+              <Text style={[styles.roleLabel, role === nextRole && styles.selectedRoleLabel]}>
+                {nextRole === 'parent' ? 'Parent' : 'Child device'}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
-        {/* User Type Selection */}
-        <View style={styles.content}>
-          <Text style={styles.sectionTitle}>Who are you?</Text>
+        {role === 'parent' ? (
+          <>
+            {creatingAccount && (
+              <TextInput
+                accessibilityLabel="Parent name"
+                autoCapitalize="words"
+                onChangeText={setParentName}
+                placeholder="Your name"
+                style={styles.input}
+                value={parentName}
+              />
+            )}
+            <TextInput
+              accessibilityLabel="Email address"
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              onChangeText={setEmail}
+              placeholder="Email address"
+              style={styles.input}
+              textContentType="emailAddress"
+              value={email}
+            />
+            <TextInput
+              accessibilityLabel="Password"
+              autoCapitalize="none"
+              autoComplete={creatingAccount ? 'new-password' : 'password'}
+              onChangeText={setPassword}
+              placeholder={creatingAccount ? 'Password (12+ characters)' : 'Password'}
+              secureTextEntry
+              style={styles.input}
+              textContentType={creatingAccount ? 'newPassword' : 'password'}
+              value={password}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={loading}
+              onPress={() => { setCreatingAccount((value) => !value); setError(null); }}
+              style={styles.textButton}
+            >
+              <Text style={styles.textButtonLabel}>
+                {creatingAccount ? 'Already have a family account? Sign in' : 'Create a parent account'}
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <TextInput
+              accessibilityLabel="Child name"
+              autoCapitalize="words"
+              onChangeText={setChildName}
+              placeholder="Child name"
+              style={styles.input}
+              value={childName}
+            />
+            <TextInput
+              accessibilityLabel="One-time family invite code"
+              autoCapitalize="none"
+              keyboardType="number-pad"
+              maxLength={6}
+              onChangeText={setInviteCode}
+              placeholder="6-digit invite code"
+              style={styles.input}
+              value={inviteCode}
+            />
+          </>
+        )}
 
-          {/* Child Login */}
-          <TouchableOpacity
-            style={[
-              styles.userTypeCard,
-              userType === 'child' && styles.userTypeCardActive,
-            ]}
-            onPress={() => setUserType('child')}
-          >
-            <Text style={styles.userTypeIcon}>👶</Text>
-            <Text style={styles.userTypeName}>Child</Text>
-            <Text style={styles.userTypeDesc}>Access your screen time</Text>
-          </TouchableOpacity>
+        <Text nativeID="privacy-disclosure" style={styles.privacyNote} testID="privacy-disclosure">
+          The app does not read social messages, inspect content, or block or shut down other apps.
+          Child devices share only the summaries they submit; SOS location is optional.
+        </Text>
 
-          {/* Parent Login */}
-          <TouchableOpacity
-            style={[
-              styles.userTypeCard,
-              userType === 'parent' && styles.userTypeCardActive,
-            ]}
-            onPress={() => setUserType('parent')}
-          >
-            <Text style={styles.userTypeIcon}>👨‍👩‍👧</Text>
-            <Text style={styles.userTypeName}>Parent</Text>
-            <Text style={styles.userTypeDesc}>Monitor your children</Text>
-          </TouchableOpacity>
+        {!parentApi.isConfigured && (
+          <Text style={styles.error}>
+            Set EXPO_PUBLIC_PARENT_API_URL and restart the app to connect to the family server.
+          </Text>
+        )}
+        {parentApi.isConfigured && !parentApi.canSignIn && (
+          <Text style={styles.error}>
+            Secure family sign-in is currently supported on iOS and Android only.
+          </Text>
+        )}
+        {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
 
-          {/* Features List */}
-          <View style={styles.featuresSection}>
-            <Text style={styles.featureTitle}>Features:</Text>
-            <View style={styles.featureItem}>
-              <Text style={styles.featureBullet}>📊</Text>
-              <Text style={styles.featureText}>Real-time screen time tracking</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Text style={styles.featureBullet}>🆘</Text>
-              <Text style={styles.featureText}>Emergency SOS alerts with location</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Text style={styles.featureBullet}>📈</Text>
-              <Text style={styles.featureText}>Weekly usage trends and insights</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Text style={styles.featureBullet}>🔔</Text>
-              <Text style={styles.featureText}>Smart notifications and alerts</Text>
-            </View>
-          </View>
-
-          {/* Login Button */}
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={() => handleLogin(userType)}
-          >
-            <Text style={styles.loginButtonText}>
-              Continue as {userType === 'child' ? 'Child' : 'Parent'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Demo Info */}
-          <View style={styles.demoInfo}>
-            <Text style={styles.demoText}>
-              This is a demo. Using mock data for development and testing.
-            </Text>
-          </View>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          disabled={loading || !parentApi.canSignIn}
+          onPress={authenticate}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            (pressed || loading || !parentApi.canSignIn) && styles.primaryButtonMuted,
+          ]}
+        >
+          {loading
+            ? <ActivityIndicator color="#FFFFFF" />
+            : <Text style={styles.primaryButtonLabel}>
+              {role === 'child' ? 'Link this device' : creatingAccount ? 'Create family account' : 'Sign in'}
+            </Text>}
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 40,
+  container: { flex: 1, backgroundColor: '#F5F7F7' },
+  content: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  title: { color: '#253638', fontSize: 28, fontWeight: '700', marginBottom: 8 },
+  description: { color: '#536669', fontSize: 15, lineHeight: 22, marginBottom: 28 },
+  roleSwitch: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#D8E0E0', marginBottom: 20 },
+  roleOption: { flex: 1, alignItems: 'center', paddingVertical: 13 },
+  selectedRole: { borderBottomWidth: 3, borderBottomColor: '#167E78' },
+  roleLabel: { color: '#647477', fontSize: 15, fontWeight: '600' },
+  selectedRoleLabel: { color: '#176A65' },
+  input: {
     backgroundColor: '#FFFFFF',
-  },
-  logo: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-  },
-  content: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-    color: '#333',
-  },
-  userTypeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#EFEFEF',
-    alignItems: 'center',
-  },
-  userTypeCardActive: {
-    borderColor: '#4ECDC4',
-    backgroundColor: '#F0FFFE',
-  },
-  userTypeIcon: {
-    fontSize: 44,
-    marginBottom: 8,
-  },
-  userTypeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  userTypeDesc: {
-    fontSize: 12,
-    color: '#999',
-  },
-  featuresSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    marginBottom: 24,
-  },
-  featureTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  featureBullet: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  featureText: {
-    fontSize: 13,
-    color: '#555',
-    flex: 1,
-  },
-  loginButton: {
-    backgroundColor: '#4ECDC4',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#4ECDC4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  demoInfo: {
-    backgroundColor: '#FFF3CD',
+    borderColor: '#C9D3D3',
     borderRadius: 8,
-    padding: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+    borderWidth: 1,
+    color: '#203033',
+    fontSize: 16,
+    marginBottom: 12,
+    minHeight: 50,
+    paddingHorizontal: 14,
   },
-  demoText: {
-    fontSize: 12,
-    color: '#856404',
-    textAlign: 'center',
+  textButton: { alignSelf: 'flex-start', marginBottom: 18, paddingVertical: 8 },
+  textButtonLabel: { color: '#176A65', fontSize: 14, fontWeight: '600' },
+  privacyNote: { color: '#46585B', fontSize: 13, lineHeight: 19, marginVertical: 12 },
+  error: { color: '#9F2D28', fontSize: 14, lineHeight: 20, marginVertical: 8 },
+  primaryButton: {
+    alignItems: 'center',
+    backgroundColor: '#167E78',
+    borderRadius: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    minHeight: 52,
   },
+  primaryButtonMuted: { opacity: 0.55 },
+  primaryButtonLabel: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });
 
 export default AuthScreen;

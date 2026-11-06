@@ -255,9 +255,8 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
             {/* Info Box */}
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
-                📚 This schedule will automatically start when the time arrives on
-                the selected days. Apps in the blocked list cannot be opened during
-                this time.
+                Study schedules are kept only in memory until the app closes.
+                They do not automatically start or block, monitor, or restrict other apps.
               </Text>
             </View>
           </ScrollView>

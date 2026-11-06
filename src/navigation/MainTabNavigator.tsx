@@ -1,10 +1,10 @@
-/**
- * Main Tab Navigator
- * Bottom tab navigation for the app
- */
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text } from 'react-native';
+import { Text, View } from 'react-native';
+import { useAppSelector } from '../store';
+import ChildRequestsScreen from '../screens/ChildRequestsScreen';
+import HomeworkModeScreen from '../screens/HomeworkModeScreen';
+import ParentDashboardScreen from '../screens/ParentDashboardScreen';
 import ScreenTimeOverviewScreen from '../screens/ScreenTimeOverviewScreen';
 import SOSHistoryScreen from '../screens/SOSHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -13,122 +13,113 @@ import SOSButton from '../components/SOSButton';
 const Tab = createBottomTabNavigator();
 
 const MainTabNavigator: React.FC = () => {
+  const userType = useAppSelector((state) => state.auth.userType);
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: true,
-        tabBarActiveTintColor: '#4ECDC4',
-        tabBarInactiveTintColor: '#CCC',
+        tabBarActiveTintColor: '#167E78',
+        tabBarInactiveTintColor: '#708082',
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
-          borderTopColor: '#EFEFEF',
+          borderTopColor: '#D5DEDE',
           paddingBottom: 8,
         },
       }}
     >
-      {/* Screen Time Tab */}
-      <Tab.Screen
-        name="ScreenTime"
-        component={ScreenTimeOverviewScreen}
-        options={{
-          title: 'Screen Time',
-          tabBarLabel: 'Screen Time',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>📊</Text>
-          ),
-          headerTitle: 'Screen Time Tracking',
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTitleStyle: {
-            color: '#333',
-            fontSize: 18,
-            fontWeight: '600',
-          },
-        }}
-      />
-
-      {/* SOS Tab */}
-      <Tab.Screen
-        name="SOS"
-        component={View}
-        options={{
-          title: 'SOS',
-          tabBarLabel: 'Emergency',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>🆘</Text>
-          ),
-          headerTitle: 'Emergency SOS',
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTitleStyle: {
-            color: '#333',
-            fontSize: 18,
-            fontWeight: '600',
-          },
-          tabBarButton: (props) => (
-            <View
-              style={{
-                flex: 1,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <SOSButton />
-            </View>
-          ),
-        }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-          },
-        }}
-      />
-
-      {/* History Tab */}
-      <Tab.Screen
-        name="SOSHistory"
-        component={SOSHistoryScreen}
-        options={{
-          title: 'History',
-          tabBarLabel: 'History',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>📋</Text>
-          ),
-          headerTitle: 'SOS History',
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTitleStyle: {
-            color: '#333',
-            fontSize: 18,
-            fontWeight: '600',
-          },
-        }}
-      />
-
-      {/* Settings Tab */}
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          title: 'Settings',
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>⚙️</Text>
-          ),
-          headerTitle: 'Settings',
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTitleStyle: {
-            color: '#333',
-            fontSize: 18,
-            fontWeight: '600',
-          },
-        }}
-      />
+      {userType === 'parent' ? (
+        <>
+          <Tab.Screen
+            name="Dashboard"
+            component={ParentDashboardScreen}
+            options={{
+              title: 'Family',
+              tabBarLabel: 'Family',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⌂</Text>,
+            }}
+          />
+          <Tab.Screen
+            name="ParentSettings"
+            component={SettingsScreen}
+            options={{
+              title: 'Settings',
+              tabBarLabel: 'Settings',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙</Text>,
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <Tab.Screen
+            name="ScreenTime"
+            component={ScreenTimeOverviewScreen}
+            options={{
+              title: 'Screen Time',
+              tabBarLabel: 'Today',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>◷</Text>,
+            }}
+          />
+          <Tab.Screen
+            name="StudyPlan"
+            component={HomeworkModeScreen}
+            options={{
+              title: 'Study plan',
+              tabBarLabel: 'Study',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>◫</Text>,
+            }}
+          />
+          <Tab.Screen
+            name="Requests"
+            component={ChildRequestsScreen}
+            options={{
+              title: 'Parent requests',
+              tabBarLabel: 'Requests',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>↔</Text>,
+            }}
+          />
+          <Tab.Screen
+            name="SOS"
+            component={View}
+            options={{
+              title: 'Emergency SOS',
+              tabBarLabel: 'SOS',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>SOS</Text>,
+              tabBarButton: (props) => (
+                <View
+                  accessibilityRole="button"
+                  accessibilityLabel="Send an emergency SOS"
+                  style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                >
+                  <SOSButton />
+                  {props.children}
+                </View>
+              ),
+            }}
+            listeners={{
+              tabPress: (event) => event.preventDefault(),
+            }}
+          />
+          <Tab.Screen
+            name="SOSHistory"
+            component={SOSHistoryScreen}
+            options={{
+              title: 'SOS history',
+              tabBarLabel: 'History',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>▤</Text>,
+            }}
+          />
+          <Tab.Screen
+            name="ChildSettings"
+            component={SettingsScreen}
+            options={{
+              title: 'Settings',
+              tabBarLabel: 'Settings',
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙</Text>,
+            }}
+          />
+        </>
+      )}
     </Tab.Navigator>
   );
 };

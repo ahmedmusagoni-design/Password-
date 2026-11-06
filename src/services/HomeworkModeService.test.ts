@@ -173,7 +173,8 @@ describe('HomeworkModeService', () => {
     });
   });
 
-  // ============ App Blocking Tests ============
+  // These are in-memory policy-decision tests; they do not exercise platform blocking.
+  // ============ Study Plan Policy Tests ============
 
   describe('App Blocking', () => {
     let schedule: HomeworkSchedule;
@@ -192,7 +193,7 @@ describe('HomeworkModeService', () => {
       session = homeworkModeService.startSession('child_1', schedule.id);
     });
 
-    it('should block known social apps', () => {
+    it('should flag a plan-listed app in the local policy decision', () => {
       const isBlocked = homeworkModeService.handleAppLaunchAttempt(
         'child_1',
         'com.instagram.android',
@@ -202,7 +203,7 @@ describe('HomeworkModeService', () => {
       expect(isBlocked).toBe(true);
     });
 
-    it('should allow non-blocked apps', () => {
+    it('should leave apps outside the local plan unchanged', () => {
       const isBlocked = homeworkModeService.handleAppLaunchAttempt(
         'child_1',
         'com.google.android.maps',

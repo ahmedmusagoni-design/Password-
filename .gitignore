@@ -1,4 +1,8 @@
 node_modules/
+server/data.json
+server/data.json.*.tmp
+android/
+ios/
 dist/
 build/
 .expo/
