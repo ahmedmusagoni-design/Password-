@@ -19,7 +19,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.example.parentalcontrol",
+      "bundleIdentifier": "com.jamaa.familysafety",
       "buildNumber": "1",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Location is shared with your family only when you send an SOS alert.",
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "package": "com.example.parentalcontrol",
+      "package": "com.jamaa.familysafety",
       "versionCode": 1
     },
     "plugins": [
@@ -48,32 +48,32 @@
             "ios": {
               "appExtensions": [
                 {
-                  "bundleIdentifier": "com.example.parentalcontrol.ShieldConfiguration",
+                  "bundleIdentifier": "com.jamaa.familysafety.ShieldConfiguration",
                   "targetName": "ShieldConfiguration",
                   "entitlements": {
                     "com.apple.developer.family-controls": true,
                     "com.apple.security.application-groups": [
-                      "group.com.example.parentalcontrol.screentime"
+                      "group.com.jamaa.familysafety.screentime"
                     ]
                   }
                 },
                 {
-                  "bundleIdentifier": "com.example.parentalcontrol.ShieldAction",
+                  "bundleIdentifier": "com.jamaa.familysafety.ShieldAction",
                   "targetName": "ShieldAction",
                   "entitlements": {
                     "com.apple.developer.family-controls": true,
                     "com.apple.security.application-groups": [
-                      "group.com.example.parentalcontrol.screentime"
+                      "group.com.jamaa.familysafety.screentime"
                     ]
                   }
                 },
                 {
-                  "bundleIdentifier": "com.example.parentalcontrol.ActivityMonitorExtension",
+                  "bundleIdentifier": "com.jamaa.familysafety.ActivityMonitorExtension",
                   "targetName": "ActivityMonitorExtension",
                   "entitlements": {
                     "com.apple.developer.family-controls": true,
                     "com.apple.security.application-groups": [
-                      "group.com.example.parentalcontrol.screentime"
+                      "group.com.jamaa.familysafety.screentime"
                     ]
                   }
                 }
