@@ -21,6 +21,7 @@ import {
   setSchedules,
 } from '@/store/slices/homeworkModeSlice';
 import { homeworkModeService } from '@/services/HomeworkModeService';
+import AppRestrictionsPanel from '@/components/AppRestrictionsPanel';
 import ScheduleEditor from '@/components/ScheduleEditor';
 import { useAppSelector } from '@/store';
 
@@ -185,8 +186,10 @@ const HomeworkModeScreen: React.FC = () => {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.disclaimer}>
-        Study schedules and timers are local planning tools. This app cannot see which apps are open or block them.
+        Study timers are planning tools and do not block apps. On iOS, use the Screen Time setup below to schedule restrictions for selected apps.
       </Text>
+
+      <AppRestrictionsPanel />
 
       {/* Status Display */}
       <StatusDisplay
@@ -223,7 +226,7 @@ const HomeworkModeScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>What this plan does</Text>
         <Text style={styles.emptyText}>
-          It can show a schedule and run a study timer on this device. App blocking, app-use monitoring, and parent push alerts require separate native platform support and are not active here.
+          Study schedules and timers run on this device. Scheduled app restrictions are separate and require Screen Time authorization on iOS.
         </Text>
       </View>
 

@@ -19,7 +19,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ onPress, enabled = true }) => {
   const [isPressed, setIsPressed] = useState(false);
   const [holdDuration, setHoldDuration] = useState(0);
   const holdStartTime = useRef<number | null>(null);
-  const holdInterval = useRef<NodeJS.Timeout | null>(null);
+  const holdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const scale = useRef(new Animated.Value(1)).current;
 
   const HOLD_DURATION_MS = 2000; // 2 seconds to trigger SOS
@@ -217,3 +217,4 @@ const styles = StyleSheet.create({
 });
 
 export default SOSButton;
+

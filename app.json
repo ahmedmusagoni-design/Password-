@@ -22,7 +22,8 @@
       "bundleIdentifier": "com.example.parentalcontrol",
       "buildNumber": "1",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Location is shared with your family only when you send an SOS alert."
+        "NSLocationWhenInUseUsageDescription": "Location is shared with your family only when you send an SOS alert.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -38,7 +39,50 @@
       ],
       "expo-secure-store"
     ],
-    "web": {
+    "web": {},
+    "extra": {
+      "parentApiUrl": "",
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "com.example.parentalcontrol.ShieldConfiguration",
+                  "targetName": "ShieldConfiguration",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.example.parentalcontrol.screentime"
+                    ]
+                  }
+                },
+                {
+                  "bundleIdentifier": "com.example.parentalcontrol.ShieldAction",
+                  "targetName": "ShieldAction",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.example.parentalcontrol.screentime"
+                    ]
+                  }
+                },
+                {
+                  "bundleIdentifier": "com.example.parentalcontrol.ActivityMonitorExtension",
+                  "targetName": "ActivityMonitorExtension",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.example.parentalcontrol.screentime"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "451e619e-2bd7-4a04-b321-28c0f78a1b0e"
+      }
     }
   }
 }

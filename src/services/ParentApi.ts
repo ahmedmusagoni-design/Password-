@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { LocationData } from '../types';
+import { AppRestrictionSchedule } from './AppRestrictionSchedule';
 
 export interface ParentUser {
   id: string;
@@ -15,6 +16,7 @@ export interface FamilyChild {
   name: string;
   createdAt: string;
   lastSyncAt: string | null;
+  linked?: boolean;
 }
 
 export interface UsageSummary {
@@ -43,6 +45,20 @@ export interface ControlRequest {
   createdAt: string;
 }
 
+export interface ChildRestrictionSchedule {
+  schedule: AppRestrictionSchedule;
+  updatedAt: string | null;
+}
+
+export interface SocialMediaControl {
+  paused: boolean;
+  revision: number;
+  updatedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedRevision: number | null;
+  appliedPaused: boolean | null;
+}
+
 interface AuthResponse {
   token: string;
   expiresAt: number;
@@ -50,7 +66,7 @@ interface AuthResponse {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: Record<string, unknown>;
   authenticated?: boolean;
 }
@@ -60,7 +76,7 @@ const CHILD_DEVICE_KEY = 'parent-control-device-id';
 const configuredUrl = Constants.expoConfig?.extra?.parentApiUrl;
 const apiBaseUrl = typeof configuredUrl === 'string' ? configuredUrl.replace(/\/+$/, '') : '';
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
     this.name = 'ApiError';
@@ -140,7 +156,7 @@ export const parentApi = {
   async linkChild(name: string, code: string): Promise<ParentUser> {
     const result = await request<AuthResponse>('/api/family/link', {
       method: 'POST',
-      body: { name, code, deviceId: await getDeviceId() },
+      body: { name, code, deviceId: await getDeviceId(), consentAccepted: true },
     });
     return storeSession(result);
   },
@@ -165,10 +181,17 @@ export const parentApi = {
     if (Platform.OS !== 'web') await SecureStore.deleteItemAsync(TOKEN_KEY);
   },
 
-  async createInvite(): Promise<{ code: string; expiresAt: number }> {
-    return request<{ code: string; expiresAt: number }>(
+  async createInvite(childName: string): Promise<{ code: string; expiresAt: number; childName?: string }> {
+    return request<{ code: string; expiresAt: number; childName?: string }>(
       '/api/family/invites',
-      { method: 'POST', authenticated: true },
+      { method: 'POST', authenticated: true, body: { childName } },
+    );
+  },
+
+  async removeChild(childId: string): Promise<void> {
+    await request<{ removed: boolean }>(
+      `/api/family/children/${encodeURIComponent(childId)}`,
+      { method: 'DELETE', authenticated: true },
     );
   },
 
@@ -183,6 +206,62 @@ export const parentApi = {
       { authenticated: true },
     );
     return result.usage;
+  },
+
+  async getChildRestrictionSchedule(childId: string): Promise<ChildRestrictionSchedule> {
+    return request<ChildRestrictionSchedule>(
+      `/api/family/children/${encodeURIComponent(childId)}/restriction-schedule`,
+      { authenticated: true },
+    );
+  },
+
+  async setChildRestrictionSchedule(
+    childId: string,
+    schedule: AppRestrictionSchedule,
+  ): Promise<ChildRestrictionSchedule> {
+    return request<ChildRestrictionSchedule>(
+      `/api/family/children/${encodeURIComponent(childId)}/restriction-schedule`,
+      { method: 'PUT', authenticated: true, body: { schedule } },
+    );
+  },
+
+  async getChildSocialMediaControl(childId: string): Promise<SocialMediaControl> {
+    const result = await request<{ control: SocialMediaControl }>(
+      `/api/family/children/${encodeURIComponent(childId)}/social-media-control`,
+      { authenticated: true },
+    );
+    return result.control;
+  },
+
+  async setChildSocialMediaPaused(childId: string, paused: boolean): Promise<SocialMediaControl> {
+    const result = await request<{ control: SocialMediaControl }>(
+      `/api/family/children/${encodeURIComponent(childId)}/social-media-control`,
+      { method: 'PUT', authenticated: true, body: { paused } },
+    );
+    return result.control;
+  },
+
+  async getAssignedRestrictionSchedule(): Promise<ChildRestrictionSchedule> {
+    return request<ChildRestrictionSchedule>(
+      '/api/devices/restriction-schedule',
+      { authenticated: true },
+    );
+  },
+
+  async getAssignedSocialMediaControl(): Promise<SocialMediaControl> {
+    const result = await request<{ control: SocialMediaControl }>(
+      '/api/devices/social-media-control',
+      { authenticated: true },
+    );
+    return result.control;
+  },
+
+  async acknowledgeSocialMediaControl(revision: number, paused: boolean): Promise<void> {
+    await request('/api/devices/social-media-control/acknowledge', {
+      method: 'POST',
+      authenticated: true,
+      body: { revision, paused },
+    });
   },
 
   async submitSelfReportedUsage(day: string, totalMinutes: number): Promise<void> {

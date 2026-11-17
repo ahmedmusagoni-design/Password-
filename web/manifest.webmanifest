@@ -1,0 +1,18 @@
+{
+  "name": "Family Safety",
+  "short_name": "Family Safety",
+  "description": "A family dashboard for child-submitted summaries and child-initiated alerts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f1eeea",
+  "theme_color": "#1b1a19",
+  "icons": [
+    {
+      "src": "/icons/family.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

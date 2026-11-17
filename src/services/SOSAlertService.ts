@@ -2,25 +2,56 @@
  * SOS Alert Service
  * Handles emergency alerts and notifications
  */
-import { logger } from '../utils/logger';
-import { SOSAlert, SOSHistoryEntry, LocationData } from '../types';
 import { generateId } from '../utils/helpers';
+import { SOSAlert, SOSHistoryEntry, LocationData } from '../types';
 import { db } from '../utils/database';
+import { logger } from '../utils/logger';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parentApi } from './ParentApi';
 
 const SOS_QUEUE_KEY = 'sos_alert_queue';
 const MAX_RETRIES = 3;
+interface SOSAlertRow {
+  id: string;
+  child_id: string;
+  child_name: string;
+  timestamp: number;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  reason: string;
+  status: SOSAlert['status'];
+  retry_count: number;
+  max_retries: number;
+}
 
+const rowToAlert = (row: SOSAlertRow): SOSAlert => ({
+  id: row.id,
+  childId: row.child_id,
+  childName: row.child_name,
+  timestamp: row.timestamp,
+  location:
+    row.latitude !== null && row.longitude !== null
+      ? {
+          latitude: row.latitude,
+          longitude: row.longitude,
+          accuracy: row.accuracy ?? 0,
+        }
+      : undefined,
+  reason: row.reason,
+  status: row.status,
+  retryCount: row.retry_count,
+  maxRetries: row.max_retries,
+});
 export class SOSAlertService {
+
   /**
    * Initialize SOS service
    */
   public async initialize(): Promise<void> {
     try {
       logger.info('Initializing SOSAlertService');
-      
       logger.info('SOSAlertService initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize SOSAlertService', error);
@@ -28,58 +59,53 @@ export class SOSAlertService {
     }
   }
 
-  /**
-   * Trigger SOS alert
+    /**
+   * Convenience wrapper to trigger an SOS alert from a reason string
    */
-  public async triggerSOS(reason: string, childId: string = 'child-001'): Promise<SOSAlert> {
-    try {
-      logger.info('Triggering SOS alert');
+  public async triggerSOS(reason: string = 'Manual SOS trigger'): Promise<SOSAlert> {
+    const newAlert: SOSAlert = {
+      id: generateId(),
+      childId: 'default-child',
+      childName: 'Child',
+      timestamp: Date.now(),
+      reason,
+      status: 'failed',
+      retryCount: 0,
+      maxRetries: MAX_RETRIES,
+    };
 
-      // Get current location
-      const location = await this.getCurrentLocation();
-
-      // Create SOS alert
-      const sosAlert: SOSAlert = {
-        id: generateId(),
-        childId,
-        childName: 'Child Name', // TODO: Get from state
-        timestamp: Date.now(),
-        location,
-        reason,
-        status: 'sent',
-        retryCount: 0,
-        maxRetries: MAX_RETRIES,
-      };
-
-      // Save to database
-      await this.saveSosAlert(sosAlert);
-
-      // Send to parents
-      try {
-        await this.sendAlertToParents(sosAlert);
-      } catch (error) {
-        logger.error('Failed to send SOS alert to parents', error);
-        sosAlert.status = 'failed';
-        await this.updateSosAlert(sosAlert);
-      }
-
-      // Add to queue for retry
-      await this.addToSyncQueue(sosAlert);
-
-      return sosAlert;
-    } catch (error) {
-      logger.error('Failed to trigger SOS alert', error);
-      throw error;
-    }
+    return this.triggerSOSAlert(newAlert);
   }
+
+  private async triggerSOSAlert(sosAlert: SOSAlert): Promise<SOSAlert> {
+    sosAlert.location = await this.getCurrentLocation();
+    await this.saveSosAlert(sosAlert);
+
+    try {
+      await this.sendAlertToParents(sosAlert);
+      await this.updateSosAlert(sosAlert);
+    } catch (error) {
+      logger.error('Failed to send SOS alert', error);
+      sosAlert.status = 'failed';
+      sosAlert.retryCount += 1;
+      await this.updateSosAlert(sosAlert);
+      await this.addToSyncQueue(sosAlert);
+    }
+
+    return sosAlert;
+  }
+
 
   /**
    * Get current location
    */
   private async getCurrentLocation(): Promise<LocationData | undefined> {
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') return undefined;
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        return undefined;
+      }
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
@@ -88,15 +114,72 @@ export class SOSAlertService {
       return {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-        accuracy: location.coords.accuracy || 0,
-        altitude: location.coords.altitude || undefined,
-        heading: location.coords.heading || undefined,
-        speed: location.coords.speed || undefined,
+        accuracy: location.coords.accuracy ?? 0,
         timestamp: location.timestamp,
       };
     } catch (error) {
-      logger.warn('Failed to get location for SOS alert', error);
+      logger.error('Failed to get current location for SOS alert', error);
       return undefined;
+    }
+  }
+
+  /**
+   * Save SOS alert to database
+   */
+  private async saveSosAlert(sosAlert: SOSAlert): Promise<void> {
+    try {
+      const database = await db;
+
+      await database.runAsync(
+        `INSERT INTO sos_alerts
+         (id, child_id, child_name, timestamp, latitude, longitude, accuracy,
+          reason, status, retry_count, max_retries)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sosAlert.id,
+          sosAlert.childId,
+          sosAlert.childName,
+          sosAlert.timestamp,
+          sosAlert.location?.latitude ?? null,
+          sosAlert.location?.longitude ?? null,
+          sosAlert.location?.accuracy ?? null,
+          sosAlert.reason,
+          sosAlert.status,
+          sosAlert.retryCount,
+          sosAlert.maxRetries,
+        ],
+      );
+
+      logger.debug('SOS alert saved to database');
+    } catch (error) {
+      logger.error('Failed to save SOS alert', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update SOS alert status
+   */
+  private async updateSosAlert(sosAlert: SOSAlert): Promise<void> {
+    try {
+      const database = await db;
+
+      await database.runAsync(
+        `UPDATE sos_alerts
+         SET status = ?, retry_count = ?, latitude = ?, longitude = ?, accuracy = ?
+         WHERE id = ?`,
+        [
+          sosAlert.status,
+          sosAlert.retryCount,
+          sosAlert.location?.latitude ?? null,
+          sosAlert.location?.longitude ?? null,
+          sosAlert.location?.accuracy ?? null,
+          sosAlert.id,
+        ],
+      );
+    } catch (error) {
+      logger.error('Failed to update SOS alert', error);
+      throw error;
     }
   }
 
@@ -107,72 +190,6 @@ export class SOSAlertService {
     await parentApi.sendSosAlert(sosAlert.location);
     sosAlert.status = 'sent';
     logger.info('SOS alert submitted to the family API');
-  }
-
-  /**
-   * Save SOS alert to database
-   */
-  private async saveSosAlert(sosAlert: SOSAlert): Promise<void> {
-    return new Promise((resolve, reject) => {
-      db.transaction((tx) => {
-        tx.executeSql(
-          `INSERT INTO sos_alerts 
-           (id, child_id, child_name, timestamp, latitude, longitude, accuracy, reason, status, retry_count, max_retries)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            sosAlert.id,
-            sosAlert.childId,
-            sosAlert.childName,
-            sosAlert.timestamp,
-            sosAlert.location?.latitude || null,
-            sosAlert.location?.longitude || null,
-            sosAlert.location?.accuracy || null,
-            sosAlert.reason,
-            sosAlert.status,
-            sosAlert.retryCount,
-            sosAlert.maxRetries,
-          ],
-          () => {
-            logger.debug('SOS alert saved to database');
-            resolve();
-          },
-          (_, error) => {
-            logger.error('Failed to save SOS alert', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
-  }
-
-  /**
-   * Update SOS alert status
-   */
-  private async updateSosAlert(sosAlert: SOSAlert): Promise<void> {
-    return new Promise((resolve, reject) => {
-      db.transaction((tx) => {
-        tx.executeSql(
-          `UPDATE sos_alerts 
-           SET status = ?, retry_count = ?, latitude = ?, longitude = ?, accuracy = ?
-           WHERE id = ?`,
-          [
-            sosAlert.status,
-            sosAlert.retryCount,
-            sosAlert.location?.latitude || null,
-            sosAlert.location?.longitude || null,
-            sosAlert.location?.accuracy || null,
-            sosAlert.id,
-          ],
-          () => resolve(),
-          (_, error) => {
-            logger.error('Failed to update SOS alert', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
   }
 
   /**
@@ -194,7 +211,7 @@ export class SOSAlertService {
   /**
    * Get sync queue
    */
-  private async getSyncQueue(): Promise<any[]> {
+  private async getSyncQueue(): Promise<Array<{ alertId: string; retries: number }>> {
     try {
       const queue = await AsyncStorage.getItem(SOS_QUEUE_KEY);
       return queue ? JSON.parse(queue) : [];
@@ -217,7 +234,7 @@ export class SOSAlertService {
         if (alert.retryCount < alert.maxRetries) {
           try {
             await this.sendAlertToParents(alert);
-            alert.retryCount++;
+            alert.retryCount += 1;
             await this.updateSosAlert(alert);
           } catch (error) {
             logger.warn(`Failed to retry SOS alert ${alert.id}`, error);
@@ -233,39 +250,18 @@ export class SOSAlertService {
    * Get failed alerts from database
    */
   private async getFailedAlerts(): Promise<SOSAlert[]> {
-    return new Promise((resolve, reject) => {
-      db.transaction((tx) => {
-        tx.executeSql(
-          `SELECT * FROM sos_alerts WHERE status = 'failed' AND retry_count < max_retries`,
-          [],
-          (_, result) => {
-            const alerts: SOSAlert[] = result.rows._array.map((row: any) => ({
-              id: row.id,
-              childId: row.child_id,
-              childName: row.child_name,
-              timestamp: row.timestamp,
-              location: row.latitude
-                ? {
-                    latitude: row.latitude,
-                    longitude: row.longitude,
-                    accuracy: row.accuracy,
-                  }
-                : undefined,
-              reason: row.reason,
-              status: row.status,
-              retryCount: row.retry_count,
-              maxRetries: row.max_retries,
-            }));
-            resolve(alerts);
-          },
-          (_, error) => {
-            logger.error('Failed to get failed alerts', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const database = await db;
+      const rows = await database.getAllAsync<SOSAlertRow>(
+        `SELECT * FROM sos_alerts
+         WHERE status = 'failed' AND retry_count < max_retries`,
+      );
+
+      return rows.map(rowToAlert);
+    } catch (error) {
+      logger.error('Failed to get failed alerts', error);
+      throw error;
+    }
   }
 
   /**
@@ -273,44 +269,13 @@ export class SOSAlertService {
    */
   public async getSOSAlertById(id: string): Promise<SOSAlert | null> {
     try {
-      return new Promise((resolve, reject) => {
-        db.transaction((tx) => {
-          tx.executeSql(
-            `SELECT * FROM sos_alerts WHERE id = ?`,
-            [id],
-            (_, result) => {
-              if (result.rows.length === 0) {
-                resolve(null);
-              } else {
-                const row = result.rows._array[0];
-                const alert: SOSAlert = {
-                  id: row.id,
-                  childId: row.child_id,
-                  childName: row.child_name,
-                  timestamp: row.timestamp,
-                  location: row.latitude
-                    ? {
-                          latitude: row.latitude,
-                          longitude: row.longitude,
-                          accuracy: row.accuracy,
-                        }
-                    : undefined,
-                  reason: row.reason,
-                  status: row.status,
-                  retryCount: row.retry_count,
-                  maxRetries: row.max_retries,
-                };
-                resolve(alert);
-              }
-            },
-            (_, error) => {
-              logger.error('Failed to get SOS alert by ID', error);
-              reject(error);
-              return false;
-            }
-          );
-        });
-      });
+      const database = await db;
+      const row = await database.getFirstAsync<SOSAlertRow>(
+        'SELECT * FROM sos_alerts WHERE id = ?',
+        [id],
+      );
+
+      return row ? rowToAlert(row) : null;
     } catch (error) {
       logger.error('Error getting SOS alert by ID', error);
       throw error;
@@ -322,39 +287,12 @@ export class SOSAlertService {
    */
   public async getAllSOSAlerts(): Promise<SOSAlert[]> {
     try {
-      return new Promise((resolve, reject) => {
-        db.transaction((tx) => {
-          tx.executeSql(
-            `SELECT * FROM sos_alerts ORDER BY timestamp DESC`,
-            [],
-            (_, result) => {
-              const alerts: SOSAlert[] = result.rows._array.map((row: any) => ({
-                id: row.id,
-                childId: row.child_id,
-                childName: row.child_name,
-                timestamp: row.timestamp,
-                location: row.latitude
-                    ? {
-                        latitude: row.latitude,
-                        longitude: row.longitude,
-                        accuracy: row.accuracy,
-                    }
-                  : undefined,
-                reason: row.reason,
-                status: row.status,
-                retryCount: row.retry_count,
-                maxRetries: row.max_retries,
-              }));
-              resolve(alerts);
-            },
-            (_, error) => {
-              logger.error('Failed to get all SOS alerts', error);
-              reject(error);
-              return false;
-            }
-          );
-        });
-      });
+      const database = await db;
+      const rows = await database.getAllAsync<SOSAlertRow>(
+        'SELECT * FROM sos_alerts ORDER BY timestamp DESC',
+      );
+
+      return rows.map(rowToAlert);
     } catch (error) {
       logger.error('Error getting all SOS alerts', error);
       throw error;
@@ -365,28 +303,26 @@ export class SOSAlertService {
    * Add entry to SOS history
    */
   public async addToHistory(entry: SOSHistoryEntry): Promise<void> {
-    return new Promise((resolve, reject) => {
-      db.transaction((tx) => {
-        tx.executeSql(
-          `INSERT INTO sos_history (id, alert_id, parent_notified, parent_response_time, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            entry.id,
-            entry.alert.id,
-            entry.parentNotified ? 1 : 0,
-            entry.parentResponseTime || null,
-            entry.notes || null,
-            Date.now(),
-          ],
-          () => resolve(),
-          (_, error) => {
-            logger.error('Failed to add to SOS history', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const database = await db;
+
+      await database.runAsync(
+        `INSERT INTO sos_history
+         (id, alert_id, parent_notified, parent_response_time, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          entry.id,
+          entry.alert.id,
+          entry.parentNotified ? 1 : 0,
+          entry.parentResponseTime ?? null,
+          entry.notes ?? null,
+          Date.now(),
+        ],
+      );
+    } catch (error) {
+      logger.error('Failed to add to SOS history', error);
+      throw error;
+    }
   }
 
   /**
@@ -395,19 +331,12 @@ export class SOSAlertService {
   public async clearAllData(): Promise<void> {
     try {
       logger.warn('Clearing all SOS data');
-      return new Promise((resolve, reject) => {
-        db.transaction((tx) => {
-          tx.executeSql('DELETE FROM sos_alerts;', []);
-          tx.executeSql(
-            'DELETE FROM sos_history;',
-            [],
-            () => resolve(),
-            (_, error) => {
-              reject(error);
-              return false;
-            },
-          );
-        });
+
+      const database = await db;
+
+      await database.withTransactionAsync(async () => {
+        await database.runAsync('DELETE FROM sos_history;');
+        await database.runAsync('DELETE FROM sos_alerts;');
       });
     } catch (error) {
       logger.error('Error clearing SOS data', error);
@@ -416,5 +345,4 @@ export class SOSAlertService {
   }
 }
 
-// Export singleton instance
 export const sosAlertService = new SOSAlertService();

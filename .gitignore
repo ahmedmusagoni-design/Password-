@@ -3,6 +3,7 @@ server/data.json
 server/data.json.*.tmp
 android/
 ios/
+targets/
 dist/
 build/
 .expo/

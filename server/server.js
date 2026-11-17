@@ -7,6 +7,16 @@ const CATEGORIES = new Set(['education', 'social', 'games', 'video', 'communicat
 const MAX_BODY_BYTES = 32 * 1024;
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 10 * 60 * 1000;
+const MAX_ACTIVE_INVITES_PER_FAMILY = 10;
+const WEB_ROOT = path.join(__dirname, '..', 'web');
+const WEB_CONTENT_TYPES = new Map([
+  ['.css', 'text/css; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.webmanifest', 'application/manifest+json; charset=utf-8'],
+]);
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -16,7 +26,81 @@ class HttpError extends Error {
 }
 
 function emptyState() {
-  return { users: [], invites: [], usage: [], alerts: [], controlRequests: [] };
+  return {
+    users: [],
+    invites: [],
+    usage: [],
+    alerts: [],
+    controlRequests: [],
+    restrictionSchedules: [],
+    socialMediaControls: [],
+  };
+}
+
+function defaultSocialMediaControl() {
+  return {
+    paused: false,
+    revision: 0,
+    updatedAt: null,
+    acknowledgedAt: null,
+    acknowledgedRevision: null,
+    appliedPaused: null,
+  };
+}
+
+function defaultRestrictionSchedule() {
+  return {
+    homework: { enabled: false, startTime: '15:00', endTime: '17:00' },
+    bedtime: { enabled: false, startTime: '21:00', endTime: '07:00' },
+    prayer: {
+      enabled: false,
+      times: { fajr: '', dhuhr: '', asr: '', maghrib: '', isha: '' },
+    },
+  };
+}
+
+function validateRestrictionSchedule(value) {
+  const isObject = (item) => item && typeof item === 'object' && !Array.isArray(item);
+  const validateTime = (time, allowEmpty = false) => {
+    if (allowEmpty && time === '') return;
+    if (typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      throw new HttpError(400, 'Schedule times must use the 24-hour HH:mm format.');
+    }
+  };
+  const validateTimed = (item) => {
+    if (!isObject(item) || typeof item.enabled !== 'boolean') {
+      throw new HttpError(400, 'Each timed schedule needs an enabled flag and start/end times.');
+    }
+    validateTime(item.startTime);
+    validateTime(item.endTime);
+    if (item.enabled && item.startTime === item.endTime) {
+      throw new HttpError(400, 'A restriction start and end time must be different.');
+    }
+    return { enabled: item.enabled, startTime: item.startTime, endTime: item.endTime };
+  };
+
+  if (!isObject(value) || !isObject(value.prayer) || !isObject(value.prayer.times)
+    || typeof value.prayer.enabled !== 'boolean') {
+    throw new HttpError(400, 'A homework, bedtime, and prayer schedule are required.');
+  }
+  const homework = validateTimed(value.homework);
+  const bedtime = validateTimed(value.bedtime);
+  const prayerNames = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const times = {};
+  for (const name of prayerNames) {
+    const time = value.prayer.times[name];
+    validateTime(time, !value.prayer.enabled);
+    times[name] = time;
+  }
+  const schedule = {
+    homework,
+    bedtime,
+    prayer: { enabled: value.prayer.enabled, times },
+  };
+  if (schedule.prayer.enabled && Object.values(times).some((time) => !time)) {
+    throw new HttpError(400, 'Enter all five prayer times or turn off prayer restrictions.');
+  }
+  return schedule;
 }
 
 function safeUser(user) {
@@ -89,11 +173,62 @@ function sendJson(res, status, value) {
   res.end(body);
 }
 
+async function serveWebAsset(req, res, pathname) {
+  if (req.method !== 'GET' || pathname.startsWith('/api/')) return false;
+
+  let relativePath;
+  try {
+    relativePath = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
+  } catch {
+    throw new HttpError(400, 'The requested path is invalid.');
+  }
+
+  const filePath = path.resolve(WEB_ROOT, `.${relativePath}`);
+  const pathFromRoot = path.relative(WEB_ROOT, filePath);
+  if (!pathFromRoot || pathFromRoot.startsWith('..') || path.isAbsolute(pathFromRoot)) return false;
+
+  let content;
+  try {
+    content = await readFile(filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'EISDIR') return false;
+    throw error;
+  }
+
+  const contentType = WEB_CONTENT_TYPES.get(path.extname(filePath).toLowerCase());
+  if (!contentType) return false;
+
+  res.writeHead(200, {
+    'content-type': contentType,
+    'content-length': content.length,
+    'cache-control': 'no-cache',
+    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+  });
+  res.end(content);
+  return true;
+}
+
 async function createApp({
   dataFile = process.env.PARENT_API_DATA_FILE || path.join(__dirname, 'data.json'),
+  allowedOrigin = process.env.PARENT_API_ALLOWED_ORIGIN || '',
   now = () => Date.now(),
   tokenTtlMs = TOKEN_TTL_MS,
 } = {}) {
+  if (allowedOrigin) {
+    let parsedOrigin;
+    try {
+      parsedOrigin = new URL(allowedOrigin);
+    } catch {
+      throw new Error('PARENT_API_ALLOWED_ORIGIN must be one HTTPS origin without a path.');
+    }
+    if (parsedOrigin.protocol !== 'https:' || parsedOrigin.origin !== allowedOrigin) {
+      throw new Error('PARENT_API_ALLOWED_ORIGIN must be one HTTPS origin without a path.');
+    }
+  }
+
   let state = emptyState();
   try {
     const stored = JSON.parse(await readFile(dataFile, 'utf8'));
@@ -101,6 +236,14 @@ async function createApp({
       || !Array.isArray(stored.usage) || !Array.isArray(stored.alerts)
       || !Array.isArray(stored.controlRequests)) {
       throw new Error('Stored API data has an invalid shape.');
+    }
+    if (stored.restrictionSchedules === undefined) stored.restrictionSchedules = [];
+    if (!Array.isArray(stored.restrictionSchedules)) {
+      throw new Error('Stored API restriction schedules have an invalid shape.');
+    }
+    if (stored.socialMediaControls === undefined) stored.socialMediaControls = [];
+    if (!Array.isArray(stored.socialMediaControls)) {
+      throw new Error('Stored API social-media controls have an invalid shape.');
     }
     state = stored;
   } catch (error) {
@@ -179,11 +322,32 @@ async function createApp({
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const { pathname } = url;
+    const origin = req.headers.origin;
+    const corsAllowed = Boolean(allowedOrigin && origin === allowedOrigin && pathname.startsWith('/api/'));
+
+    if (origin && pathname.startsWith('/api/')) {
+      res.setHeader('vary', 'Origin');
+      if (corsAllowed) {
+        res.setHeader('access-control-allow-origin', allowedOrigin);
+        res.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.setHeader('access-control-allow-headers', 'Authorization, Content-Type');
+        res.setHeader('access-control-max-age', '600');
+      }
+    }
+
+    if (req.method === 'OPTIONS' && pathname.startsWith('/api/')) {
+      if (!corsAllowed) throw new HttpError(403, 'This website is not allowed to access the API.');
+      res.writeHead(204, { 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
 
     if (req.method === 'GET' && pathname === '/health') {
       sendJson(res, 200, { status: 'ok' });
       return;
     }
+
+    if (await serveWebAsset(req, res, pathname)) return;
 
     if (req.method === 'POST' && pathname === '/api/auth/register') {
       verifyRequestRate(registrationAttempts, req, 5, 'Too many registration attempts. Try again in 15 minutes.');
@@ -238,26 +402,43 @@ async function createApp({
       const body = await readJsonBody(req);
       const code = typeof body.code === 'string' ? body.code.trim() : '';
       const deviceId = typeof body.deviceId === 'string' ? body.deviceId.trim() : '';
-      const name = validateName(body.name);
-      if (!/^\d{6}$/.test(code) || deviceId.length < 8 || deviceId.length > 128) {
-        throw new HttpError(400, 'A six-digit invite code and valid device ID are required.');
+      if (body.consentAccepted !== true) {
+        throw new HttpError(400, 'Confirm the device-linking notice before continuing.');
+      }
+      if (!/^\d{8}$/.test(code) || deviceId.length < 8 || deviceId.length > 128) {
+        throw new HttpError(400, 'An eight-digit invite code and valid device ID are required.');
       }
       const codeHash = createHash('sha256').update(code).digest('hex');
       const index = state.invites.findIndex((invite) => invite.codeHash === codeHash
         && invite.expiresAt > now());
       if (index < 0) throw new HttpError(401, 'Invite code is invalid or expired.');
-      const [invite] = state.invites.splice(index, 1);
-      const user = {
-        id: randomUUID(),
-        familyId: invite.familyId,
-        name,
-        email: null,
-        role: 'child',
-        deviceId,
-        createdAt: new Date(now()).toISOString(),
-        lastSyncAt: null,
-      };
-      state.users.push(user);
+      const invite = state.invites[index];
+      let user;
+      if (invite.childId) {
+        user = state.users.find((item) => item.id === invite.childId
+          && item.role === 'child' && item.familyId === invite.familyId && !item.deviceId);
+        if (!user) throw new HttpError(401, 'Invite code is invalid or expired.');
+        if (typeof body.name === 'string' && body.name.trim()
+          && body.name.trim().toLocaleLowerCase() !== user.name.toLocaleLowerCase()) {
+          throw new HttpError(401, 'The invite code does not match this child profile.');
+        }
+        user.deviceId = deviceId;
+        user.linkedAt = new Date(now()).toISOString();
+      } else {
+        user = {
+          id: randomUUID(),
+          familyId: invite.familyId,
+          name: validateName(body.name),
+          email: null,
+          role: 'child',
+          deviceId,
+          createdAt: new Date(now()).toISOString(),
+          linkedAt: new Date(now()).toISOString(),
+          lastSyncAt: null,
+        };
+        state.users.push(user);
+      }
+      state.invites.splice(index, 1);
       const session = issueSession(user);
       await persist();
       pairingAttempts.delete(req.socket.remoteAddress || 'unknown');
@@ -272,29 +453,203 @@ async function createApp({
 
     if (req.method === 'POST' && pathname === '/api/family/invites') {
       const parent = requireRole(req, 'parent');
+      const body = await readJsonBody(req);
       state.invites = state.invites.filter((invite) => invite.expiresAt > now());
+      const activeInvites = state.invites.filter((invite) => invite.familyId === parent.familyId);
+      if (activeInvites.length >= MAX_ACTIVE_INVITES_PER_FAMILY) {
+        throw new HttpError(429, 'This family has 10 active invites. Remove a pending profile before creating another.');
+      }
       let code;
       do {
-        code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+        code = String(randomInt(0, 100_000_000)).padStart(8, '0');
       } while (state.invites.some((invite) => invite.codeHash
         === createHash('sha256').update(code).digest('hex') && invite.expiresAt > now()));
       const expiresAt = now() + INVITE_TTL_MS;
+      let child;
+      if (body.childName !== undefined) {
+        child = {
+          id: randomUUID(),
+          familyId: parent.familyId,
+          name: validateName(body.childName),
+          email: null,
+          role: 'child',
+          deviceId: null,
+          createdAt: new Date(now()).toISOString(),
+          linkedAt: null,
+          lastSyncAt: null,
+        };
+        state.users.push(child);
+      }
       state.invites.push({
         codeHash: createHash('sha256').update(code).digest('hex'),
         familyId: parent.familyId,
+        ...(child ? { childId: child.id } : {}),
         expiresAt,
       });
       await persist();
-      sendJson(res, 201, { code, expiresAt });
+      sendJson(res, 201, {
+        code,
+        expiresAt,
+        ...(child ? { childName: child.name } : {}),
+      });
       return;
     }
 
     if (req.method === 'GET' && pathname === '/api/family/children') {
       const parent = requireRole(req, 'parent');
       const children = state.users
-        .filter((user) => user.role === 'child' && user.familyId === parent.familyId)
-        .map(({ id, name, createdAt, lastSyncAt }) => ({ id, name, createdAt, lastSyncAt }));
+        .filter((user) => user.role === 'child' && user.familyId === parent.familyId && user.deviceId)
+        .map(({ id, name, createdAt, linkedAt, lastSyncAt }) => ({
+          id, name, createdAt, linkedAt: linkedAt || null, lastSyncAt,
+        }));
       sendJson(res, 200, { children });
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/family/profiles') {
+      const parent = requireRole(req, 'parent');
+      const profiles = state.users
+        .filter((user) => user.role === 'child' && user.familyId === parent.familyId)
+        .map(({ id, name, createdAt, linkedAt, lastSyncAt, deviceId }) => ({
+          id,
+          name,
+          createdAt,
+          linked: Boolean(deviceId),
+          linkedAt: linkedAt || null,
+          lastSyncAt,
+          inviteExpiresAt: state.invites.find((invite) => invite.childId === id
+            && invite.expiresAt > now())?.expiresAt || null,
+        }));
+      sendJson(res, 200, { profiles });
+      return;
+    }
+
+    const removeChildMatch = /^\/api\/family\/children\/([^/]+)$/.exec(pathname);
+    if (req.method === 'DELETE' && removeChildMatch) {
+      const parent = requireRole(req, 'parent');
+      const childId = removeChildMatch[1];
+      const child = state.users.find((user) => user.id === childId
+        && user.role === 'child' && user.familyId === parent.familyId);
+      if (!child) throw new HttpError(404, 'Child was not found in this family.');
+
+      state.users = state.users.filter((user) => user.id !== child.id);
+      state.invites = state.invites.filter((invite) => invite.childId !== child.id);
+      state.usage = state.usage.filter((item) => item.childId !== child.id);
+      state.alerts = state.alerts.filter((alert) => alert.childId !== child.id);
+      state.controlRequests = state.controlRequests.filter((item) => item.childId !== child.id);
+      state.restrictionSchedules = state.restrictionSchedules.filter((item) => item.childId !== child.id);
+      state.socialMediaControls = state.socialMediaControls.filter((item) => item.childId !== child.id);
+      for (const [token, session] of sessions) {
+        if (session.userId === child.id) sessions.delete(token);
+      }
+      await persist();
+      sendJson(res, 200, { removed: true });
+      return;
+    }
+
+    const socialMediaControlMatch = /^\/api\/family\/children\/([^/]+)\/social-media-control$/.exec(pathname);
+    if (socialMediaControlMatch && (req.method === 'GET' || req.method === 'PUT')) {
+      const parent = requireRole(req, 'parent');
+      const childId = socialMediaControlMatch[1];
+      const child = state.users.find((user) => user.id === childId
+        && user.role === 'child' && user.familyId === parent.familyId && user.deviceId);
+      if (!child) throw new HttpError(404, 'Linked child device was not found in this family.');
+
+      let control = state.socialMediaControls.find((item) => item.childId === child.id);
+      if (req.method === 'GET') {
+        const { childId: ignoredChildId, ...publicControl } = control || defaultSocialMediaControl();
+        sendJson(res, 200, { control: publicControl });
+        return;
+      }
+
+      const body = await readJsonBody(req);
+      if (typeof body.paused !== 'boolean') {
+        throw new HttpError(400, 'paused must be true or false.');
+      }
+      if (!control) {
+        control = { childId: child.id, ...defaultSocialMediaControl() };
+        state.socialMediaControls.push(control);
+      }
+      control.paused = body.paused;
+      control.revision += 1;
+      control.updatedAt = new Date(now()).toISOString();
+      control.acknowledgedAt = null;
+      control.acknowledgedRevision = null;
+      control.appliedPaused = null;
+      await persist();
+      const { childId: ignoredChildId, ...publicControl } = control;
+      sendJson(res, 200, { control: publicControl });
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/devices/social-media-control') {
+      const child = requireRole(req, 'child');
+      const control = state.socialMediaControls.find((item) => item.childId === child.id);
+      const { childId: ignoredChildId, ...publicControl } = control || defaultSocialMediaControl();
+      sendJson(res, 200, { control: publicControl });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/devices/social-media-control/acknowledge') {
+      const child = requireRole(req, 'child');
+      const body = await readJsonBody(req);
+      if (!Number.isInteger(body.revision) || typeof body.paused !== 'boolean') {
+        throw new HttpError(400, 'revision and paused are required to acknowledge this control.');
+      }
+      const control = state.socialMediaControls.find((item) => item.childId === child.id);
+      if (!control || body.revision !== control.revision || body.paused !== control.paused) {
+        throw new HttpError(409, 'The parent control changed. Fetch the latest setting and try again.');
+      }
+      control.acknowledgedAt = new Date(now()).toISOString();
+      control.acknowledgedRevision = control.revision;
+      control.appliedPaused = control.paused;
+      await persist();
+      sendJson(res, 200, {
+        acknowledgedAt: control.acknowledgedAt,
+        acknowledgedRevision: control.acknowledgedRevision,
+        appliedPaused: control.appliedPaused,
+      });
+      return;
+    }
+
+    const restrictionScheduleMatch = /^\/api\/family\/children\/([^/]+)\/restriction-schedule$/.exec(pathname);
+    if (restrictionScheduleMatch && (req.method === 'GET' || req.method === 'PUT')) {
+      const parent = requireRole(req, 'parent');
+      const childId = restrictionScheduleMatch[1];
+      const child = state.users.find((user) => user.id === childId
+        && user.role === 'child' && user.familyId === parent.familyId);
+      if (!child) throw new HttpError(404, 'Child was not found in this family.');
+
+      const existing = state.restrictionSchedules.find((item) => item.childId === child.id);
+      if (req.method === 'GET') {
+        sendJson(res, 200, {
+          schedule: existing?.schedule || defaultRestrictionSchedule(),
+          updatedAt: existing?.updatedAt || null,
+        });
+        return;
+      }
+
+      const body = await readJsonBody(req);
+      const schedule = validateRestrictionSchedule(body.schedule);
+      const updatedAt = new Date(now()).toISOString();
+      if (existing) {
+        existing.schedule = schedule;
+        existing.updatedAt = updatedAt;
+      } else {
+        state.restrictionSchedules.push({ childId: child.id, schedule, updatedAt });
+      }
+      await persist();
+      sendJson(res, 200, { schedule, updatedAt });
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/devices/restriction-schedule') {
+      const child = requireRole(req, 'child');
+      const existing = state.restrictionSchedules.find((item) => item.childId === child.id);
+      sendJson(res, 200, {
+        schedule: existing?.schedule || defaultRestrictionSchedule(),
+        updatedAt: existing?.updatedAt || null,
+      });
       return;
     }
 
@@ -497,7 +852,7 @@ async function createApp({
 
 if (require.main === module) {
   createApp().then(({ server }) => {
-    const port = Number(process.env.PORT || 4000);
+    const port = Number(process.env.PORT || 4001);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be 1-65535.');
     const host = process.env.HOST || '127.0.0.1';
     server.listen(port, host, () => console.log(`Parent control API listening on http://${host}:${port}`));

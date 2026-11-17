@@ -25,6 +25,7 @@ const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [childName, setChildName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [childConsent, setChildConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,9 @@ const AuthScreen: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      if (role === 'child' && !childConsent) {
+        throw new Error('Review and accept the device-linking notice before continuing.');
+      }
       const user = role === 'child'
         ? await parentApi.linkChild(childName, inviteCode)
         : creatingAccount
@@ -64,6 +68,7 @@ const AuthScreen: React.FC = () => {
               accessibilityState={{ selected: role === nextRole }}
               onPress={() => {
                 setRole(nextRole);
+                setChildConsent(false);
                 setError(null);
               }}
               style={[styles.roleOption, role === nextRole && styles.selectedRole]}
@@ -134,18 +139,36 @@ const AuthScreen: React.FC = () => {
               accessibilityLabel="One-time family invite code"
               autoCapitalize="none"
               keyboardType="number-pad"
-              maxLength={6}
+              maxLength={8}
               onChangeText={setInviteCode}
-              placeholder="6-digit invite code"
+              placeholder="8-digit invite code"
               style={styles.input}
               value={inviteCode}
             />
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: childConsent }}
+              onPress={() => setChildConsent((accepted) => !accepted)}
+              style={styles.consent}
+            >
+              <View style={[styles.checkbox, childConsent && styles.checkboxChecked]}>
+                {childConsent && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.consentText}>
+                I understand this links the device to the family that shared the code. The app can show
+                only summaries or SOS information I choose to send through the child app; it does not
+                read messages, monitor app use, or share background location. If my parent sets it up,
+                selected apps may be paused on iOS after separate Screen Time approval on this device.
+              </Text>
+            </Pressable>
           </>
         )}
 
         <Text nativeID="privacy-disclosure" style={styles.privacyNote} testID="privacy-disclosure">
-          The app does not read social messages, inspect content, or block or shut down other apps.
-          Child devices share only the summaries they submit; SOS location is optional.
+          Device linking is optional. The parent can remove this device later. This app does not read
+          messages or app usage, or track location in the background. On iOS only, separately approved
+          Screen Time settings can pause apps selected on this device; this does not shut down the device.
+          SOS location is optional and requested only after a child starts an SOS.
         </Text>
 
         {!parentApi.isConfigured && (
@@ -162,11 +185,12 @@ const AuthScreen: React.FC = () => {
 
         <Pressable
           accessibilityRole="button"
-          disabled={loading || !parentApi.canSignIn}
+          disabled={loading || !parentApi.canSignIn || (role === 'child' && !childConsent)}
           onPress={authenticate}
           style={({ pressed }) => [
             styles.primaryButton,
-            (pressed || loading || !parentApi.canSignIn) && styles.primaryButtonMuted,
+            (pressed || loading || !parentApi.canSignIn || (role === 'child' && !childConsent))
+              && styles.primaryButtonMuted,
           ]}
         >
           {loading
@@ -204,6 +228,22 @@ const styles = StyleSheet.create({
   textButton: { alignSelf: 'flex-start', marginBottom: 18, paddingVertical: 8 },
   textButtonLabel: { color: '#176A65', fontSize: 14, fontWeight: '600' },
   privacyNote: { color: '#46585B', fontSize: 13, lineHeight: 19, marginVertical: 12 },
+  consent: { alignItems: 'flex-start', flexDirection: 'row', marginVertical: 8, paddingVertical: 6 },
+  checkbox: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#829293',
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 1,
+    width: 22,
+  },
+  checkboxChecked: { backgroundColor: '#167E78', borderColor: '#167E78' },
+  checkmark: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', lineHeight: 18 },
+  consentText: { color: '#34494B', flex: 1, fontSize: 13, lineHeight: 19 },
   error: { color: '#9F2D28', fontSize: 14, lineHeight: 20, marginVertical: 8 },
   primaryButton: {
     alignItems: 'center',
